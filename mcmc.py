@@ -149,331 +149,181 @@ def get_burnndx(log_prob):
 
 
 ###########################################################################
-#::: MCMC fit
+#::: emcee backend
 ###########################################################################
-def mcmc_fit(datadir):
+def _run_emcee(s):
+    """Run emcee EnsembleSampler. Returns the sampler."""
+    outdir = config.BASEMENT.outdir
+    save_h5 = os.path.join(outdir, 'mcmc_save.h5')
+    continue_old_run = os.path.exists(save_h5)
 
-    #::: init
-    config.init(datadir)
+    backend = emcee.backends.HDFBackend(save_h5)
 
-
-    continue_old_run = False
-    if os.path.exists(os.path.join(config.BASEMENT.outdir,'mcmc_save.h5')):
-        continue_old_run = True
-        # str(input(os.path.join(config.BASEMENT.outdir,'mcmc_save.h5')+\
-        #                       ' already exists.\n'+\
-        #                       'What do you want to do?\n'+\
-        #                       '1 : overwrite the save file\n'+\
-        #                       '2 : append to the save file\n'+\
-        #                       '3 : abort\n'))
-        # if (overwrite == '1'):
-        #     continue_old_run = False
-        # elif (overwrite == '2'):
-        #     continue_old_run = True
-        # else:
-        #     raise ValueError('User aborted operation.')
-
-
-    #::: continue on the backend / reset the backend
-    if os.path.exists(os.path.join(config.BASEMENT.outdir,'mcmc_save.h5')) and not continue_old_run:
-        #backend.reset(config.BASEMENT.settings['mcmc_nwalkers'], config.BASEMENT.ndim)
-        os.remove(os.path.join(config.BASEMENT.outdir,'mcmc_save.h5'))
-
-
-    #::: set up a fresh backend
-    backend = emcee.backends.HDFBackend(os.path.join(config.BASEMENT.outdir,'mcmc_save.h5'))
-
-
-    #::: helper fct
-    def run_mcmc(sampler):
-
-        #::: set initial walker positions
+    def _run(sampler):
         if continue_old_run:
-            p0 = backend.get_chain()[-1,:,:]
-            already_completed_steps = backend.get_chain().shape[0] * config.BASEMENT.settings['mcmc_thin_by']
+            p0 = backend.get_chain()[-1, :, :]
+            already_completed_steps = backend.get_chain().shape[0] * s['mcmc_thin_by']
         else:
-            p0 = config.BASEMENT.theta_0 + config.BASEMENT.init_err * np.random.randn(config.BASEMENT.settings['mcmc_nwalkers'], config.BASEMENT.ndim)
-
-
-            # if config.BASEMENT.settings['use_de'] == 'True':
-            use_de = False
-            if use_de:
-
-                ### DiffEvol to find initial walker positions Xian-Yu, Fen 9 2024
-                # from .de import DiffEvol
-                keys = config.BASEMENT.fitkeys
-                de_bounds = []
-                for i in range(len(config.BASEMENT.bounds)):
-                    if 'uniform' in config.BASEMENT.bounds[i][0]:
-                        de_bounds.append([config.BASEMENT.bounds[i][-2], config.BASEMENT.bounds[i][-1]])
-                    else:
-                        de_bounds.append([config.BASEMENT.bounds[i][-2] -  3*config.BASEMENT.bounds[i][-1], config.BASEMENT.bounds[i][-2] +  3*config.BASEMENT.bounds[i][-1]])
-                from tqdm.auto import tqdm
-                from pytransit.utils.de import DiffEvol
-                def optimize_global(niter=200, npop=50, population=None, pool=None, lnpost=None, vectorize=True, bounds=None,
-                                        label='Global optimisation', leave=False, plot_convergence: bool = True, use_tqdm: bool = True,
-                                        plot_parameters: tuple = (0, 2, 3, 4)):
-
-                        lnpost = lnpost
-
-                        de = DiffEvol(lnpost, np.clip(bounds, -1, 1), npop, maximize=True, vectorize=vectorize, pool=pool)
-                        de._population[:, :] = population
-                        for _ in tqdm(de(niter), total=niter, desc=label, leave=leave, disable=(not use_tqdm)):
-                            pass
-                        return de.minimum_location, de.minimum_value, de.minimum_location, de.minimum_value, de._population,de.min_ptp,de._fitness.ptp()
-
-                if os.path.exists(os.path.join(datadir, 'results', 'de_population.npy')):
-                    p0 = np.load(os.path.join(datadir, 'results', 'de_population.npy'))
-                    print('Loaded previous DE population')
-                print('Running DE')
-                import multiprocessing as mp
-                pool = mp.Pool(mp.cpu_count())
-                niter = 50000#int(config.BASEMENT.settings['de_steps'])
-                minimum_location, minimum_value, population, population_values, population, min_ptp, fitness_ptp = optimize_global(niter=niter, npop=config.BASEMENT.settings['mcmc_nwalkers'], \
-                                        population=p0, pool=pool, lnpost=mcmc_lnprob, vectorize=False, bounds=de_bounds, label='Global optimisation', leave=False, use_tqdm=True, plot_parameters=(0, 2, 3, 4))
-                pool.close()
-                pool.join()
-                if min_ptp > fitness_ptp:
-                    print('DE converged')
-                else:
-                    print('DE not converged')
-                np.save(os.path.join(datadir, 'results', 'de_population.npy'), population)
-                p0 = population
-
-
+            p0 = (config.BASEMENT.theta_0
+                  + config.BASEMENT.init_err
+                  * np.random.randn(s['mcmc_nwalkers'], config.BASEMENT.ndim))
             already_completed_steps = 0
-        #::: make sure the inital positions are within the limits
+
         for i, b in enumerate(config.BASEMENT.bounds):
             if b[0] == 'uniform':
-                p0[:,i] = np.clip(p0[:,i], b[1], b[2])
+                p0[:, i] = np.clip(p0[:, i], b[1], b[2])
 
-        #::: if pre-runs are wished for, and if we are not continuing an existing run
-        if continue_old_run==False:
-            for i in range(config.BASEMENT.settings['mcmc_pre_run_loops']):
-                logprint("\nRunning pre-run loop",i+1,'/',config.BASEMENT.settings['mcmc_pre_run_loops'])
-
-                #::: run the sampler
-                sampler.run_mcmc(p0,
-                                 config.BASEMENT.settings['mcmc_pre_run_steps'],
-                                 progress=config.BASEMENT.settings['print_progress'])
-
-                #::: get maximum likelhood solution
+        if not continue_old_run:
+            for i in range(s['mcmc_pre_run_loops']):
+                logprint("\nRunning pre-run loop", i + 1, '/', s['mcmc_pre_run_loops'])
+                sampler.run_mcmc(p0, s['mcmc_pre_run_steps'], progress=s['print_progress'])
                 log_prob = sampler.get_log_prob(flat=True)
                 posterior_samples = sampler.get_chain(flat=True)
                 ind_max = np.argmax(log_prob)
-                p0 = posterior_samples[ind_max,:] + config.BASEMENT.init_err * np.random.randn(config.BASEMENT.settings['mcmc_nwalkers'], config.BASEMENT.ndim)
-
-                #::: reset sampler and backend
-                #backend.reset(config.BASEMENT.settings['mcmc_nwalkers'], config.BASEMENT.ndim)
-                os.remove(os.path.join(config.BASEMENT.outdir,'mcmc_save.h5'))
+                p0 = (posterior_samples[ind_max, :]
+                      + config.BASEMENT.init_err
+                      * np.random.randn(s['mcmc_nwalkers'], config.BASEMENT.ndim))
+                os.remove(save_h5)
                 sampler.reset()
 
-        #::: run the sampler
         logprint("\nRunning full MCMC")
-        sampler.run_mcmc(p0,
-                         int((config.BASEMENT.settings['mcmc_total_steps'] - already_completed_steps)/config.BASEMENT.settings['mcmc_thin_by']),
-                         thin_by=int(config.BASEMENT.settings['mcmc_thin_by']),
-                         progress=config.BASEMENT.settings['print_progress'])
-        # index = 0
-        # ndraws = int((config.BASEMENT.settings['mcmc_total_steps'] - already_completed_steps)/config.BASEMENT.settings['mcmc_thin_by'])
-        # autocorr = np.empty(ndraws)
-        # old_tau = np.inf
-        # for sample in sampler.sample(p0,iterations=ndraws,thin_by=int(config.BASEMENT.settings['mcmc_thin_by']),progress=True):
-        #     ## Only check convergence every 100 steps
-        #     if sampler.iteration % 100: continue
-        #     if sampler.iteration <= config.BASEMENT.settings['mcmc_burn_steps']: 
-        #         mcmc_burn_steps = 0
-        #     else:
-        #         mcmc_burn_steps = config.BASEMENT.settings['mcmc_burn_steps']
-        #     tau = sampler.get_autocorr_time(tol=0,discard=mcmc_burn_steps)
-        #     autocorr[index] = np.mean(tau)
-        #     index += 1
-        #     ## Check convergence
-        #     # mcmc_total_steps_over_max_tau
-        #     mcmc_total_steps_over_max_tau = int(config.BASEMENT.settings['mcmc_total_steps_over_max_tau'])
-        #     converged = np.all(tau * mcmc_total_steps_over_max_tau < sampler.iteration)
-        #     # print('Iteration {}: max tau = {} ratio = {}'.format(int(sampler.iteration), np.round(np.max(tau),2), np.round(np.max(tau) / sampler.iteration,2)))
-        #     print('Nstep / max_tau = {}, converged par num = {}, all par number = {}'.format(np.round(sampler.iteration / np.max(tau),2), len(np.where(tau * mcmc_total_steps_over_max_tau < sampler.iteration)[0]), len(tau)))
-        #     converged = np.all( np.array(tau) * mcmc_total_steps_over_max_tau < sampler.iteration)
-        #     converged &= np.all( np.array(old_tau) * mcmc_total_steps_over_max_tau < sampler.iteration)
-        #     if converged:
-        #         print('\nMCMC converged after {} iterations.'.format(sampler.iteration))
-        #         break
-
-        #     old_tau = tau
-        # config.BASEMENT.settings['mcmc_total_steps'] = sampler.iteration
+        sampler.run_mcmc(
+            p0,
+            int((s['mcmc_total_steps'] - already_completed_steps) / s['mcmc_thin_by']),
+            thin_by=int(s['mcmc_thin_by']),
+            progress=s['print_progress'],
+        )
         return sampler
 
-
-    #::: Run
-
-    logprint("\nRunning MCMC...")
-    logprint('--------------------------')
-    t0 = timer()
-    if config.BASEMENT.settings['multiprocess']:
-        with closing(Pool(processes=(config.BASEMENT.settings['multiprocess_cores']))) as pool: #multiprocessing
-#        with closing(Pool(cpu_count()-1)) as pool: #pathos
-            logprint('\nRunning on', config.BASEMENT.settings['multiprocess_cores'], 'CPUs.')
-            sampler = emcee.EnsembleSampler(config.BASEMENT.settings['mcmc_nwalkers'],
-                                            config.BASEMENT.ndim,
-                                            mcmc_lnprob,
-                                            moves= [
-                                                    (emcee.moves.DEMove(), 0.8),
-                                                    (emcee.moves.DESnookerMove(), 0.2),
-                                                    ],
-                                            pool=pool,
-                                            backend=backend)
-            sampler = run_mcmc(sampler)
-        t1 = timer()
-        timemcmc = (t1-t0)
-        logprint("\nTime taken to run 'emcee' on", config.BASEMENT.settings['multiprocess_cores'], "cores is {:.2f} hours".format(timemcmc/60./60.))
-
+    _moves = [(emcee.moves.DEMove(), 0.8), (emcee.moves.DESnookerMove(), 0.2)]
+    if s['multiprocess']:
+        logprint('\nRunning on', s['multiprocess_cores'], 'CPUs.')
+        with closing(Pool(processes=s['multiprocess_cores'])) as pool:
+            sampler = emcee.EnsembleSampler(
+                s['mcmc_nwalkers'], config.BASEMENT.ndim, mcmc_lnprob,
+                moves=_moves, pool=pool, backend=backend,
+            )
+            sampler = _run(sampler)
     else:
-        sampler = emcee.EnsembleSampler(config.BASEMENT.settings['mcmc_nwalkers'],
-                                        config.BASEMENT.ndim,
-                                        mcmc_lnprob,
-                                        moves=config.BASEMENT.settings['mcmc_moves'],
-                                        backend=backend)
-        sampler = run_mcmc(sampler)
-        t1 = timer()
-        timemcmc = (t1-t0)
-        logprint("\nTime taken to run 'emcee' on a single core is {:.2f} hours".format(timemcmc/60./60.))
-
-
-    #::: Auto burn-in (EXOFASTv2 style)
-    log_prob = sampler.get_log_prob()   # (nsteps, nwalkers)
-    burnndx  = get_burnndx(log_prob)
-    config.BASEMENT.settings['mcmc_burn_steps'] = burnndx * config.BASEMENT.settings['mcmc_thin_by']
-    logprint(f'\nAuto burn-in: stored step {burnndx} → {config.BASEMENT.settings["mcmc_burn_steps"]} total steps '
-             f'({100.*burnndx/log_prob.shape[0]:.0f}% of chain)')
-
-    #::: Check performance and convergence
-    logprint('\nAcceptance fractions:')
-    logprint('--------------------------')
-    logprint(sampler.acceptance_fraction)
+        sampler = emcee.EnsembleSampler(
+            s['mcmc_nwalkers'], config.BASEMENT.ndim, mcmc_lnprob,
+            moves=s.get('mcmc_moves', _moves), backend=backend,
+        )
+        sampler = _run(sampler)
 
     print_autocorr(sampler)
-
-
-    #::: return a German saying
-    try:
-        with open(os.path.join(os.path.dirname(__file__), 'utils', 'quotes2.txt')) as dataset:
-            return(np.random.choice([l for l in dataset]))
-    except:
-        return('42')
-
+    return sampler
 
 
 ###########################################################################
-#::: DEMCPT fit  (DE MCMC with Parallel Tempering)
+#::: DEMCPT backend
 ###########################################################################
-def demcpt_fit(datadir):
-    """
-    Run the DEMCPT sampler (EXOFASTv2-style DE MCMC + Parallel Tempering).
+def _run_demcpt(s):
+    """Run DEMCPTSampler. Returns the sampler."""
+    outdir   = config.BASEMENT.outdir
+    nchains  = s['mcmc_nwalkers']
+    ntemps   = int(s.get('mcmc_ntemps', 1))
+    maxgr    = float(s.get('mcmc_maxgr', 1.01))
+    mintz    = float(s.get('mcmc_mintz', 1000))
+    nsteps   = int(s['mcmc_total_steps'] / s['mcmc_thin_by'])
+    nthin    = int(s['mcmc_thin_by'])
 
-    Reads settings from settings.csv:
-        mcmc_nwalkers      — number of chains  (default 2 * ndim)
-        mcmc_total_steps   — max stored steps per chain
-        mcmc_thin_by       — thinning factor
-        mcmc_ntemps        — temperature rungs (default 1 = no PT)
-        mcmc_maxgr         — Gelman-Rubin threshold (default 1.01)
-        mcmc_mintz         — min independent draws (default 1000)
-        multiprocess_cores — worker processes (default 'all')
-    """
+    cores    = s.get('multiprocess_cores', 1)
+    nworkers = (multiprocessing.cpu_count()
+                if str(cores).lower() == 'all' else int(cores))
 
-    config.init(datadir)
-
-    s = config.BASEMENT.settings
-    ndim = config.BASEMENT.ndim
-    nchains = s['mcmc_nwalkers']
-    ntemps  = int(s.get('mcmc_ntemps', 1))
-    maxgr   = float(s.get('mcmc_maxgr', 1.01))
-    mintz   = float(s.get('mcmc_mintz', 1000))
-    nsteps  = int(s['mcmc_total_steps'] / s['mcmc_thin_by'])
-    nthin   = int(s['mcmc_thin_by'])
-
-    cores = s.get('multiprocess_cores', 1)
-    if str(cores).lower() == 'all':
-        import multiprocessing as _mp
-        nworkers = _mp.cpu_count()
-    else:
-        nworkers = int(cores)
-
-    save_file = os.path.join(config.BASEMENT.outdir, 'demcpt_save.h5')
+    save_file        = os.path.join(outdir, 'demcpt_save.h5')
     continue_old_run = os.path.exists(save_file)
 
-    logprint("\nRunning DEMCPT...")
-    logprint('--------------------------')
     logprint(f'  nchains={nchains}  ntemps={ntemps}  nsteps={nsteps}  nthin={nthin}')
     logprint(f'  maxgr={maxgr}  mintz={mintz}  nworkers={nworkers}')
-    t0 = timer()
 
     if continue_old_run:
         logprint(f'\nResuming from {save_file}')
-        sampler = DEMCPTSampler.load(save_file, mcmc_lnprob)
+        sampler   = DEMCPTSampler.load(save_file, mcmc_lnprob)
         converged = sampler._run_continue(
-            nsteps=nsteps,
-            nthin=nthin,
-            scale=config.BASEMENT.init_err,
-            progress=s.get('print_progress', True),
-            nworkers=nworkers,
-            save_every=max(nsteps // 10, 1),
-            save_file=save_file,
+            nsteps=nsteps, nthin=nthin, scale=config.BASEMENT.init_err,
+            progress=s.get('print_progress', True), nworkers=nworkers,
+            save_every=max(nsteps // 10, 1), save_file=save_file,
         )
     else:
-        sampler = DEMCPTSampler(
-            mcmc_lnprob,
-            ndim=ndim,
-            nchains=nchains,
-            ntemps=ntemps,
-            maxgr=maxgr,
-            mintz=mintz,
+        sampler   = DEMCPTSampler(
+            mcmc_lnprob, ndim=config.BASEMENT.ndim,
+            nchains=nchains, ntemps=ntemps, maxgr=maxgr, mintz=mintz,
         )
         converged = sampler.run(
-            p0=config.BASEMENT.theta_0,
-            nsteps=nsteps,
-            nthin=nthin,
+            p0=config.BASEMENT.theta_0, nsteps=nsteps, nthin=nthin,
             scale=config.BASEMENT.init_err,
-            progress=s.get('print_progress', True),
-            nworkers=nworkers,
-            save_every=max(nsteps // 10, 1),
-            save_file=save_file,
+            progress=s.get('print_progress', True), nworkers=nworkers,
+            save_every=max(nsteps // 10, 1), save_file=save_file,
         )
 
-    t1 = timer()
-    logprint(f"\nTime taken: {(t1-t0)/3600:.2f} hours")
     if converged:
         logprint("DEMCPT converged.")
     else:
         logprint("WARNING: DEMCPT did NOT converge within the step limit.")
 
-    # update total_steps to what was actually run (may be less if converged early)
-    actual_steps = sampler._chain.shape[0] * nthin
-    s['mcmc_total_steps'] = actual_steps
+    s['mcmc_total_steps'] = sampler._chain.shape[0] * nthin
 
-    #::: Auto burn-in (same logic as emcee path)
-    log_prob = sampler.get_log_prob()   # (nsteps, nchains)
-    burnndx  = get_burnndx(log_prob)
-    s['mcmc_burn_steps'] = burnndx * nthin
-    logprint(f'\nAuto burn-in: stored step {burnndx} → {s["mcmc_burn_steps"]} total steps '
-             f'({100.*burnndx/log_prob.shape[0]:.0f}% of chain)')
-
-    #::: save as emcee-compatible HDF5 so mcmc_output() works unchanged
-    mcmc_save_h5 = os.path.join(config.BASEMENT.outdir, 'mcmc_save.h5')
+    mcmc_save_h5 = os.path.join(outdir, 'mcmc_save.h5')
     sampler.save_as_emcee_backend(mcmc_save_h5)
     logprint(f'\nSaved emcee-compatible backend: {mcmc_save_h5}')
 
-    #::: diagnostics
+    sampler.summary(param_names=config.BASEMENT.fitkeys)
+    return sampler
+
+
+###########################################################################
+#::: Unified entry point
+###########################################################################
+def mcmc_fit(datadir, method=None):
+    """
+    Run MCMC sampling.
+
+    Parameters
+    ----------
+    datadir : str
+        Path to the data directory containing params.csv and settings.csv.
+    method : {'emcee', 'demcpt'} or None
+        Sampler backend.  If None, reads ``mcmc_sampler`` from settings.csv
+        (defaults to 'emcee' when not set).
+    """
+    config.init(datadir)
+    s = config.BASEMENT.settings
+
+    if method is None:
+        method = s.get('mcmc_sampler', 'emcee')
+
+    logprint(f"\nRunning MCMC ({method})...")
+    logprint('--------------------------')
+    t0 = timer()
+
+    if method == 'emcee':
+        sampler = _run_emcee(s)
+    elif method == 'demcpt':
+        sampler = _run_demcpt(s)
+    else:
+        raise ValueError(
+            f"Unknown mcmc_sampler: {method!r}. Choose 'emcee' or 'demcpt'."
+        )
+
+    t1 = timer()
+    logprint(f"\nTime taken: {(t1 - t0) / 3600:.2f} hours")
+
+    #::: shared epilogue: auto burn-in + acceptance fractions
+    log_prob = sampler.get_log_prob()       # (nsteps, nwalkers/nchains)
+    nthin    = int(s['mcmc_thin_by'])
+    burnndx  = get_burnndx(log_prob)
+    s['mcmc_burn_steps'] = burnndx * nthin
+    logprint(f'\nAuto burn-in: stored step {burnndx} → {s["mcmc_burn_steps"]} total steps '
+             f'({100. * burnndx / log_prob.shape[0]:.0f}% of chain)')
+
     logprint('\nAcceptance fractions:')
     logprint('--------------------------')
     logprint(sampler.acceptance_fraction)
-    sampler.summary(param_names=config.BASEMENT.fitkeys)
-    print_autocorr(sampler)
 
-    #::: return a German saying
-    try:
-        with open(os.path.join(os.path.dirname(__file__), 'utils', 'quotes2.txt')) as dataset:
-            return(np.random.choice([l for l in dataset]))
-    except:
-        return('42')
+
+def demcpt_fit(datadir):
+    """Backward-compatible alias for ``mcmc_fit(datadir, method='demcpt')``."""
+    return mcmc_fit(datadir, method='demcpt')
 
