@@ -35,7 +35,7 @@ from scipy.stats import truncnorm
 from .exoworlds_rdx.lightcurves.index_transits import index_transits, index_eclipses, get_first_epoch, get_tmid_observed_transits
 from .priors.simulate_PDF import simulate_PDF
 from .utils.mcmc_move_translator import translate_str_to_move
-from .star import get_stellar_row, has_stellar_info, sample_stellar, summary_dict
+from .star import get_stellar_row, has_stellar_info, summary_dict
 
 #::: plotting settings
 import seaborn as sns
@@ -308,17 +308,6 @@ class Basement():
         else:
             self.settings['cornerplot'] = False
 
-        #::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
-        #::: Host stellar density prior
-        #::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
-        if 'use_host_density_prior' in self.settings:
-            self.settings['use_host_density_prior'] = set_bool(self.settings['use_host_density_prior'] )
-        else:
-            self.settings['use_host_density_prior'] = True
-        
-        
-        #::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
-        #::: Host stellar density prior
         #::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
         if 'use_tidal_eccentricity_prior' in self.settings:
             self.settings['use_tidal_eccentricity_prior'] = set_bool(self.settings['use_tidal_eccentricity_prior'] )
@@ -1414,27 +1403,10 @@ class Basement():
     ###############################################################################
     #::: stellar priors
     ###############################################################################
-    def load_stellar_priors(self, N_samples=10000):
+    def load_stellar_priors(self):
         row = get_stellar_row(self.datadir, self.params)
         if has_stellar_info(row, require=("R_star", "M_star")):
             self.params_star = summary_dict(row)
-        if self.settings['use_host_density_prior'] is True and has_stellar_info(row, require=("R_star", "M_star")):
-            # When host_mstar and host_rstar are free MCMC parameters, the dynamic
-            # Kepler coupling in calculate_external_priors handles the constraint each
-            # step — no static MC-sampled prior is needed.
-            _mstar_fitted = 'host_mstar' in self.fitkeys
-            _rstar_fitted = 'host_rstar' in self.fitkeys
-            if _mstar_fitted and _rstar_fitted:
-                pass  # dynamic coupling; skip MC sampling
-            else:
-                stellar = sample_stellar(row, size=N_samples)
-                radius = stellar["R_star"] * 6.957e10 #in cgs
-                mass = stellar["M_star"] * 1.9884754153381438e+33 #in cgs
-                volume = (4./3.)*np.pi*radius**3 #in cgs
-                density = mass / volume #in cgs
-                sigma = np.max([np.median(density)-np.percentile(density,16), np.percentile(density,84)-np.median(density)])
-                if np.isfinite(sigma) and sigma > 0:
-                    self.external_priors['host_density'] = ['normal', np.median(density), sigma] #in cgs
 
         # Pre-load SED data into BASEMENT so it is available without I/O on
         # every likelihood evaluation (consistent with how self.data is loaded).

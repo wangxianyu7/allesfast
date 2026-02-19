@@ -26,7 +26,7 @@ sns.set_context(rc={'lines.markeredgewidth': 1})
 import numpy as np
 import os
 #import ellc
-from astropy import units as u
+
 from scipy.optimize import minimize
 from scipy.interpolate import UnivariateSpline
 import numpy.polynomial.polynomial as poly
@@ -65,7 +65,6 @@ from .flares.aflare import aflare1
 # from .exoworlds_rdx.lightcurves.lightcurve_tools import calc_phase
 from .lightcurves import translate_limb_darkening_from_q_to_u as q_to_u
 # from .lightcurves import translate_limb_darkening_from_u_to_q as u_to_q
-from .observables import calc_M_comp_from_RV, calc_rho, calc_rho_host
 from .star import StellarInputs, mist_chi2, sed_chi2, torres_constraints
 
 
@@ -423,65 +422,6 @@ def update_params(theta):
                                      [params[companion+'_spot_'+str(i)+'_brightness_'+inst] for i in range(1,config.BASEMENT.settings[companion+'_N_spots_'+inst]+1) ]
                                     ]
         
-        
-    #=========================================================================
-    #::: host stellar density, per companion
-    #::: (in cgs units)
-    #::: this can directly be computed from Kepler's third law, by dividing by R_host**3
-    #::: see also Seager & Mallen-Ornelas 2003 and Winn 2010, Eq. 30
-    #::: only do this if it's actually requested by the user
-    #=========================================================================
-    if config.BASEMENT.settings['use_host_density_prior'] is True:
-
-            for companion in config.BASEMENT.settings['companions_phot']:
-        
-                # """
-                # If we have transit and RV data, we can constrain each companion's mass 
-                # and density directly during sampling
-                # """
-                if (params[companion+'_rr'] is not None) and (params[companion+'_rr'] > 0) \
-                    and (params[companion+'_K'] is not None) and (params[companion+'_K'] > 0):
-                        
-                    M_comp = calc_M_comp_from_RV(K = params[companion+'_K'],
-                                                 P = params[companion+'_period'], 
-                                                 incl = params[companion+'_incl'], 
-                                                 ecc = params[companion+'_ecc'], 
-                                                 M_host = config.BASEMENT.params_star['M_star_median'], 
-                                                 return_unit = u.Msun) #in Msun
-                    
-                    R_comp = params[companion+'_rr'] * config.BASEMENT.params_star['R_star_median'] #in Rsun
-                    
-                    rho_comp = calc_rho(R = R_comp, 
-                                        M = M_comp, 
-                                        R_unit = u.Rsun,
-                                        M_unit = u.Msun,
-                                        return_unit='cgs') #in cgs units
-                    
-                    params[companion+'_host_density'] = calc_rho_host(P = params[companion+'_period'], 
-                                                                      radius_1 = params[companion+'_radius_1'], 
-                                                                      rr = params[companion+'_rr'], 
-                                                                      rho_comp = rho_comp, 
-                                                                      return_unit = 'cgs')
-                        
-                # """
-                # Elif we only have transit data, we need to assume rr^3 * rho_comp := (R_companion/R_star)^3 * rho_comp --> 0. 
-                # Hence, we here demand rr**3 < 0.01, allowing a 1% erroneous contribution by the planet density.
-                # """
-                elif (params[companion+'_rr'] is not None) and (params[companion+'_rr'] > 0) \
-                    and (params[companion+'_rr']**3 < 0.01):
-                        
-                    params[companion+'_host_density'] = calc_rho_host(P = params[companion+'_period'], 
-                                                                      radius_1 = params[companion+'_radius_1'], 
-                                                                      rr = params[companion+'_rr'], 
-                                                                      rho_comp = 0., #just to set the whole term to 0 
-                                                                      return_unit = 'cgs')
-                        
-                # """
-                # Else we can't do anything. 
-                # """
-                else:
-                    params[companion+'_host_density'] = None
-            
         
     #=========================================================================
     #::: lastly, deal with coupled params again after updates
@@ -1253,52 +1193,6 @@ def calculate_external_priors(params):
     '''
     lnp = 0.        
     
-    #::: stellar density prior / dynamic Kepler coupling (EXOFASTv2-style)
-    if config.BASEMENT.settings['use_host_density_prior'] is True:
-
-        _mstar_dyn = params.get('host_mstar', None)
-        _rstar_dyn = params.get('host_rstar', None)
-
-        if (_mstar_dyn is not None and _rstar_dyn is not None and
-                _mstar_dyn > 0 and _rstar_dyn > 0 and
-                np.isfinite(_mstar_dyn) and np.isfinite(_rstar_dyn)):
-            # --- Dynamic coupling -------------------------------------------
-            # Compute stellar density from current MCMC stellar params (cgs).
-            # Compare to density derived from transit geometry via Kepler's 3rd law.
-            # This couples transit/RV geometry to MIST+SED stellar parameters,
-            # mirroring EXOFASTv2's approach of deriving a/R★ from Mstar+Rstar+P.
-            rho_star_model = calc_rho(R=_rstar_dyn, M=_mstar_dyn,
-                                      R_unit=u.Rsun, M_unit=u.Msun,
-                                      return_unit='cgs')
-            for companion in config.BASEMENT.settings['companions_phot']:
-                rho_transit = params.get(companion + '_host_density', None)
-                if (rho_transit is not None and
-                        np.isfinite(rho_transit) and rho_transit > 0):
-                    # 1% fractional tolerance → effectively a hard Kepler constraint
-                    sigma_rho = 0.01 * rho_star_model
-                    lnp += -0.5 * ((rho_transit - rho_star_model) / sigma_rho) ** 2
-
-        elif 'host_density' in config.BASEMENT.external_priors:
-            # --- Static prior fallback (original allesfitter behavior) -------
-            # Used when host_mstar / host_rstar are not free MCMC parameters.
-            for companion in config.BASEMENT.settings['companions_phot']:
-                '''
-                The stellar density computed from R_host and M_host
-                can be directly compared with the stellar density computed from
-                the orbital motions (see e.g. Winn 2010)
-                '''
-                if params[companion+'_host_density'] is not None:
-                    b = config.BASEMENT.external_priors['host_density']
-                    if b[0] == 'uniform':
-                        if not (b[1] <= params[companion+'_host_density'] <= b[2]):
-                            return -np.inf
-                    elif b[0] == 'normal':
-                        lnp += np.log( 1./(np.sqrt(2*np.pi) * b[2]) * np.exp(
-                            - (params[companion+'_host_density'] - b[1])**2 / (2.*b[2]**2) ) )
-                    else:
-                        raise ValueError('Bounds have to be "uniform" or "normal". '
-                                         'Input was "'+b[0]+'".')
-
     #::: optional stellar-model priors (single-star for now)
     _distance = params.get('host_distance', None)
     if _distance is None:

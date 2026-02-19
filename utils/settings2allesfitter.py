@@ -303,7 +303,6 @@ def settings_to_csv(settings_path, output_path=None):
     lines.append('phase_curve,False')
     lines.append('shift_epoch,True')
     lines.append('inst_for_b_epoch,all')
-    lines.append('use_host_density_prior,True')
 
     # MCMC
     section('MCMC settings')

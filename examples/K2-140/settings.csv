@@ -17,7 +17,6 @@ secondary_eclipse,False
 phase_curve,False
 shift_epoch,True
 inst_for_b_epoch,all
-use_host_density_prior,True
 ###############################################################################,
 # MCMC settings,
 ###############################################################################,
@@ -72,3 +71,4 @@ sed_file,380255458.sed
 b_flux_weighted_Keck,True
 #t_exp_n_int_Keck,10
 #t_exp_Keck,0.0130910003
+mcmc_sampler,demcpt
