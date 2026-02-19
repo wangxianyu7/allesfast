@@ -60,6 +60,8 @@ from .priors.estimate_noise import estimate_noise, estimate_noise_out_of_transit
 
 from .prepare_ttv_fit import prepare_ttv_fit
 
+from .utils.mkprior2 import mkprior2
+
 from .postprocessing.nested_sampling_compare_logZ import get_logZ, ns_plot_bayes_factors
 from .postprocessing.plot_violins import ns_plot_violins, mcmc_plot_violins
 from .postprocessing.plot_histograms import plot_histograms
