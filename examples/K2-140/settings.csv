@@ -21,19 +21,12 @@ inst_for_b_epoch,all
 # MCMC settings,
 ###############################################################################,
 mcmc_nwalkers,56  # 2 x 28 free params
-mcmc_total_steps,1000
+mcmc_total_steps,10000
 mcmc_thin_by,10
 mcmc_ntemps,8
 mcmc_maxgr,1.01
 mcmc_mintz,1000
-###############################################################################,
-# Nested Sampling settings,
-###############################################################################,
-ns_modus,dynamic
-ns_nlive,500
-ns_bound,single
-ns_sample,rwalk
-ns_tol,0.01
+
 ###############################################################################,
 # Limb darkening law per object and instrument,
 ###############################################################################,

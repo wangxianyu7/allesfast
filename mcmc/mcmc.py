@@ -235,7 +235,7 @@ def _run_demcpt(s):
     save_file        = os.path.join(outdir, 'demcpt_save.h5')
     continue_old_run = os.path.exists(save_file)
 
-    logprint(f'  nchains={nchains}  ntemps={ntemps}  nsteps={nsteps}  nthin={nthin}')
+    logprint(f'  nchains={nchains}  ntemps={ntemps}  target_thinned_steps={nsteps}  nthin={nthin}')
     logprint(f'  maxgr={maxgr}  mintz={mintz}  nworkers={nworkers}')
 
     if continue_old_run:

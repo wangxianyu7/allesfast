@@ -540,7 +540,8 @@ class DEMCPTSampler:
 
         if progress:
             workers_s = f" ({nworkers} workers)" if use_pool else ""
-            print(f"Continuing MCMC{workers_s} for +{nsteps} steps ...")
+            print(f"Continuing MCMC{workers_s}: +{total_steps} thinned steps "
+                  f"(resuming from {old_steps}, target {nsteps}) ...")
 
         pool = Pool(nworkers) if use_pool else None
         try:
