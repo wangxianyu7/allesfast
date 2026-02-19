@@ -158,6 +158,7 @@ def _star_from_params(params):
         feh=params.get("host_feh", None),
         rstar=params.get("host_rstar", None),
         mstar=params.get("host_mstar", None),
+        eep=params.get("host_eep", None),
         age=params.get("host_age", None),
         av=params.get("host_av", None),
         distance=distance,
@@ -302,16 +303,16 @@ def make_sed_plot(params, datadir, outdir, outfile="stellar_sed_fit.png", errsca
 
 def make_mist_plot(params, outdir, outfile="stellar_mist_track.png"):
     star = _star_from_params(params)
-    if any(v is None for v in [star.mstar, star.feh, star.age, star.teff, star.rstar]):
+    if any(v is None for v in [star.eep, star.mstar, star.feh, star.teff, star.rstar]):
         return None
     os.makedirs(outdir, exist_ok=True)
     path = os.path.join(outdir, outfile)
     _ = massradius_mist(
-        float(star.mstar),
-        float(star.feh),
-        float(star.age),
-        float(star.teff),
-        float(star.rstar),
+        eep=float(star.eep),
+        mstar=float(star.mstar),
+        feh=float(star.feh),
+        teff=float(star.teff),
+        rstar=float(star.rstar),
         debug=True,
         pngname=path,
     )

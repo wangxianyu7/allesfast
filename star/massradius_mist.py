@@ -256,7 +256,7 @@ def massradius_mist(eep, mstar, feh, teff, rstar, vvcrit=None, alpha=None, span=
                     eeps_iso,
                     mstar,
                     feh,
-                    age,
+                    mistage,   # derived age from EEP
                     teff,
                     rstar,
                     gravitysun,
