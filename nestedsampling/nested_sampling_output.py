@@ -312,12 +312,6 @@ def ns_output(datadir):
     logprint('\nDone. For all outputs, see', config.BASEMENT.outdir)
     
     
-    #::: return a nerdy quote
-    try:
-        with open(os.path.join(os.path.dirname(__file__), 'utils', 'quotes.txt')) as dataset:
-            return(np.random.choice([l for l in dataset]))
-    except:
-        return('42')
     
     
 
