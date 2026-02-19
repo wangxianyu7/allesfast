@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=42"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "allesfast"
+version = "0.0.1"
+description = "Allesfitter x EXOFASTv2"
+readme = "README.md"
+requires-python = ">=3.8"
+dependencies = [
+    "numpy",
+    "scipy",
+    "matplotlib",
+    "astropy",
+    "seaborn",
+    "emcee",
+    "dynesty",
+    "pytransit",
+    "radvel",
+    "celerite",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["allesfast*"]

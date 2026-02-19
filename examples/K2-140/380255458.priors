@@ -1,0 +1,18 @@
+#### TICv8.2 ####
+mstar 1.02
+rstar 1.02
+teff 5712
+##############
+av 0 -1 0 0.107220865
+# NOTE: Gaia DR2 parallax (2.84730) corrected per Lindegren+ 2018
+# parallax 2.87730 0.07472
+# NOTE: Gaia DR3 parallax could not be corrected; using raw value
+parallax 2.87480 0.01887
+# Apparent 2MASS K magnitude for the Mann relation
+appks 10.995000 0.021000
+# wide Gaussian prior Sweet-Cat Sousa+2021
+feh 0.5 0.07 
+
+tc 2458435.7138
+period 6.569188
+vsini 10 -1 0 20
