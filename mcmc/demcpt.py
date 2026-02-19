@@ -519,9 +519,13 @@ class DEMCPTSampler:
         logp = self._logp_full
 
         old_steps = self._chain.shape[0]
-        total_steps = old_steps + nsteps
-        chain = np.empty((total_steps, nchains, ndim))
-        log_prob = np.empty((total_steps, nchains))
+        total_steps = nsteps - old_steps
+        if total_steps <= 0:
+            if progress:
+                print(f"  Already at {old_steps}/{nsteps} steps; nothing to do.")
+            return False
+        chain = np.empty((nsteps, nchains, ndim))
+        log_prob = np.empty((nsteps, nchains))
         chain[:old_steps] = self._chain
         log_prob[:old_steps] = self._log_prob
 
@@ -540,7 +544,7 @@ class DEMCPTSampler:
 
         pool = Pool(nworkers) if use_pool else None
         try:
-            for k in range(nsteps):
+            for k in range(total_steps):
                 for _thin in range(nthin):
                     for m in range(ntemps):
                         if m < ntemps - 1:
@@ -589,7 +593,7 @@ class DEMCPTSampler:
                     self.save(save_file)
                     last_saved = i + 1
                     if progress:
-                        pct = 100 * (i + 1) / total_steps
+                        pct = 100 * (i + 1) / nsteps
                         acc = naccept / max(nattempt, 1) * 100
                         swap_s = (f"; swap={nswap/nswap_attempt*100:.1f}%"
                                   if ntemps > 1 and nswap_attempt > 0 else "")
@@ -612,7 +616,7 @@ class DEMCPTSampler:
                             save_s = (f" | saved at step {last_saved}"
                                       if last_saved is not None else "")
                             print(
-                                f"\r  {100*(i+1)/total_steps:5.1f}% | "
+                                f"\r  {100*(i+1)/nsteps:5.1f}% | "
                                 f"accept={acc:.1f}%{swap_s} | "
                                 f"GR={max_gr:.4f} (<{self.maxgr}) | "
                                 f"Tz={min_tz:.0f} (>{self.mintz}){save_s}   ",
@@ -638,9 +642,9 @@ class DEMCPTSampler:
 
         if progress:
             if converged:
-                print(f"\n  Converged at step {final_step}/{total_steps}.")
+                print(f"\n  Converged at step {final_step}/{nsteps}.")
             else:
-                print(f"\n  Reached max steps ({total_steps}). NOT converged.")
+                print(f"\n  Reached max steps ({nsteps}). NOT converged.")
 
         self._chain = chain
         self._log_prob = log_prob

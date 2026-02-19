@@ -52,11 +52,11 @@ host_teff,5712.000000,1,uniform 3500 50000,$T_{\rm eff}$,K
 host_teff_lerr,76,0,fixed,$\sigma^{-}_{T_{\mathrm{eff}}}$,$\mathrm{K}$
 host_teff_uerr,83,0,fixed,$\sigma^{+}_{T_{\mathrm{eff}}}$,$\mathrm{K}$
 #stellar and orbital priors from .priors file
-host_feh,0.5,1,normal 0.5 0.07,$[\rm Fe/H]$,dex
+host_feh,0.1,1,normal 0.1 0.1,$[\rm Fe/H]$,dex
 host_parallax,2.8748,1,normal 2.8748 0.01887,$\varpi$,mas
 #limb darkening (auto-added by settings2allesfitter)
 host_ldc_q1_CORALIE,0.5,0,uniform 0.0 1.0,$q_{1; CORALIE}$,
 host_ldc_q2_CORALIE,0.5,0,uniform 0.0 1.0,$q_{2; CORALIE}$,
 #stellar and orbital priors from .priors file
 host_av,0,1,uniform 0 0.107221,$A_V$,mag
-host_age,5,1,uniform 0 13.8,$\rm Age$,Gyr
+host_eep,300,1,uniform 1 808,$\rm EEP$,

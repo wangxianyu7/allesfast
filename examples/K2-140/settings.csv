@@ -22,7 +22,7 @@ use_host_density_prior,True
 # MCMC settings,
 ###############################################################################,
 mcmc_nwalkers,56  # 2 x 28 free params
-mcmc_total_steps,10000
+mcmc_total_steps,1000
 mcmc_thin_by,10
 mcmc_ntemps,8
 mcmc_maxgr,1.01
