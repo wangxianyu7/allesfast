@@ -30,7 +30,7 @@ def prepare(path):
 
 def run_allesfast(path):
     allesfast.show_initial_guess(path, do_logprint=False)
-    allesfast.demcpt_fit(path)
+    allesfast.mcmc_fit(path)
     allesfast.mcmc_output(path)
 
 

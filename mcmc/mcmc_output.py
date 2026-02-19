@@ -278,18 +278,6 @@ def mcmc_output(datadir, quiet=False):
     #::: security check
     if os.path.exists(os.path.join(config.BASEMENT.outdir,'mcmc_table.csv')):
         overwrite = '1'
-        # try:
-        #     overwrite = str(input('MCMC output files already exists in '+config.BASEMENT.outdir+'.\n'+\
-        #                           'What do you want to do?\n'+\
-        #                           '1 : overwrite the output files\n'+\
-        #                           '2 : abort\n'))
-        #     if (overwrite == '1'):
-        #         pass
-        #     else:
-        #         raise ValueError('User aborted operation.')
-        # except EOFError:
-        #     warnings.warn("MCMC output files already existed from a previous run, and were automatically overwritten.")
-        #     pass
     
     
     #::: load the mcmc_save.h5
@@ -322,7 +310,8 @@ def mcmc_output(datadir, quiet=False):
     
     
     #::: print autocorr
-    print_autocorr(reader)
+    if config.BASEMENT.settings['mcmc_sampler'] == 'emcee':
+        print_autocorr(reader)
 
 
     #::: plot the fit
