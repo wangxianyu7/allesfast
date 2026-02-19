@@ -43,15 +43,15 @@ sns.set_context(rc={'lines.markeredgewidth': 1})
 #:::: allesfast modules
 from . import config
 
-from .mcmc import mcmc_fit, demcpt_fit
-from .nested_sampling import ns_fit
+from .mcmc.mcmc import mcmc_fit, demcpt_fit
+from .nestedsampling.nested_sampling import ns_fit
 
 from . import general_output
-from . import nested_sampling_output
+from .nestedsampling import nested_sampling_output
 
 from .general_output import show_initial_guess, draw_initial_guess_samples, get_labels, get_data, get_settings
-from .nested_sampling_output import get_ns_posterior_samples, get_ns_params, ns_output, ns_derive
-from .mcmc_output import get_mcmc_posterior_samples, mcmc_output, draw_mcmc_posterior_samples, draw_mcmc_posterior_samples_at_maximum_likelihood
+from .nestedsampling.nested_sampling_output import get_ns_posterior_samples, get_ns_params, ns_output, ns_derive
+from .mcmc.mcmc_output import get_mcmc_posterior_samples, mcmc_output, draw_mcmc_posterior_samples, draw_mcmc_posterior_samples_at_maximum_likelihood
 
 from .computer import calculate_model, calculate_baseline, calculate_stellar_var, calculate_yerr_w, update_params
 
@@ -64,7 +64,7 @@ from .postprocessing.nested_sampling_compare_logZ import get_logZ, ns_plot_bayes
 from .postprocessing.plot_violins import ns_plot_violins, mcmc_plot_violins
 from .postprocessing.plot_histograms import plot_histograms
 
-from .plotting import fullplot, fullplot_csv, brokenplot, brokenplot_csv, tessplot, tessplot_csv
+from .plotting.plotting import fullplot, fullplot_csv, brokenplot, brokenplot_csv, tessplot, tessplot_csv
 
 from .lightcurves import translate_limb_darkening_from_q_to_u as q_to_u
 from .lightcurves import translate_limb_darkening_from_u_to_q as u_to_q
