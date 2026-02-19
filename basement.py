@@ -105,6 +105,7 @@ class Basement():
         
         #::: external priors (e.g. stellar density)
         self.external_priors = {}
+        self.sed_data = None
         self.load_stellar_priors()
 
         #::: pre-initialise per-instrument PyTransit models (set_data called once here,
@@ -1430,5 +1431,15 @@ class Basement():
                 sigma = np.max([np.median(density)-np.percentile(density,16), np.percentile(density,84)-np.median(density)])
                 if np.isfinite(sigma) and sigma > 0:
                     self.external_priors['host_density'] = ['normal', np.median(density), sigma] #in cgs
-            
-            
+
+        # Pre-load SED data into BASEMENT so it is available without I/O on
+        # every likelihood evaluation (consistent with how self.data is loaded).
+        if self.settings.get('use_sed_prior') and self.settings.get('sed_file'):
+            from .star.sed_utils import read_sed_file
+            _sed_path = self.settings['sed_file']
+            if not os.path.isabs(_sed_path):
+                _sed_path = os.path.join(self.datadir, _sed_path)
+            if os.path.exists(_sed_path):
+                self.sed_data = read_sed_file(_sed_path, nstars=1)
+
+
