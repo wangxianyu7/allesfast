@@ -14,12 +14,6 @@ from .models import StellarInputs
 from .massradius_mist import massradius_mist
 from .sed_utils import mistmultised, read_sed_file
 
-# Cache sed_data by absolute sed_file path.
-# read_sed_file reads the file, allocates large numpy arrays (e.g. 24000-pt
-# filter curves), and is otherwise identical on every call for the same file.
-# Caching it avoids repeated I/O + allocation on every likelihood evaluation.
-_sed_data_cache: Dict[str, Any] = {}
-
 
 def _derive_logg(mstar: float, rstar: float) -> float:
     gravity_sun = 27420.011  # cgs
@@ -35,18 +29,23 @@ def _derive_lstar(teff: float, rstar: float) -> float:
 def mist_chi2(star: StellarInputs, config: Optional[Dict[str, Any]] = None) -> float:
     """
     Compute MIST penalty chi2 for one star.
+
+    EEP (star.eep, 1–808, continuous) is the primary MIST parameter.
+    Age is derived from the evolutionary track and is NOT a free parameter.
     """
     cfg = config or {}
-    _ = cfg  # kept for interface compatibility
-    if any(v is None for v in [star.mstar, star.feh, star.age, star.teff, star.rstar]):
+    if any(v is None for v in [star.eep, star.mstar, star.feh, star.teff, star.rstar]):
         return np.inf
     try:
         return massradius_mist(
+            eep=float(star.eep),
             mstar=float(star.mstar),
             feh=float(star.feh),
-            age=float(star.age),
             teff=float(star.teff),
             rstar=float(star.rstar),
+            vvcrit=cfg.get('vvcrit', None),
+            alpha=cfg.get('alpha', None),
+            allowold=cfg.get('allowold', False),
         )
     except Exception:
         return np.inf
@@ -55,10 +54,14 @@ def mist_chi2(star: StellarInputs, config: Optional[Dict[str, Any]] = None) -> f
 def sed_chi2(
     star: StellarInputs,
     sed_file: str,
+    sed_data=None,
     config: Optional[Dict[str, Any]] = None,
 ) -> float:
     """
     Compute SED chi2 for one star.
+
+    sed_data : pre-loaded SED data dict from read_sed_file (e.g. stored in
+               BASEMENT.sed_data at init time).  If None, the file is read here.
     """
     cfg = config or {}
     if any(v is None for v in [star.teff, star.rstar, star.feh, star.av, star.distance, star.mstar]):
@@ -70,11 +73,8 @@ def sed_chi2(
         logg = _derive_logg(float(star.mstar), float(star.rstar))
         lstar = _derive_lstar(float(star.teff), float(star.rstar))
 
-        # Load SED data once per file path; reuse on subsequent calls.
-        abs_path = os.path.abspath(sed_file)
-        if abs_path not in _sed_data_cache:
-            _sed_data_cache[abs_path] = read_sed_file(abs_path, nstars=1)
-        sed_data = _sed_data_cache[abs_path]
+        if sed_data is None:
+            sed_data = read_sed_file(os.path.abspath(sed_file), nstars=1)
 
         chi2, _, _, _ = mistmultised(
             np.array([float(star.teff)]),

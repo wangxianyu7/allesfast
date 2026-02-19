@@ -95,9 +95,9 @@ def _load_track_tuple(mstar, feh, vvcrit, alpha):
     ages, rstars, teffs, fehs, ageweights = track_arr
     return ages.astype(float), rstars.astype(float), teffs.astype(float), fehs.astype(float), ageweights.astype(float)
 
-def massradius_mist(mstar, feh, age, teff, rstar, vvcrit=None, alpha=None, span=1, epsname=None, debug=False,
-                    gravitysun=27420.011, fitage=False, ageweight=None, verbose=False, logname=None, 
-                    trackfile=None, allowold=False, tefffloor=None, fehfloor=None, rstarfloor=None, 
+def massradius_mist(eep, mstar, feh, teff, rstar, vvcrit=None, alpha=None, span=1, epsname=None, debug=False,
+                    gravitysun=27420.011, fitage=False, ageweight=None, verbose=False, logname=None,
+                    trackfile=None, allowold=False, tefffloor=None, fehfloor=None, rstarfloor=None,
                     agefloor=None, pngname=None, range=None):
     '''
     ;+
@@ -111,14 +111,16 @@ def massradius_mist(mstar, feh, age, teff, rstar, vvcrit=None, alpha=None, span=
 ;   (massradius_yy3.pro).
 ;
 ; CALLING SEQUENCE:
-;   chi2 = massradius_mist(mstar, feh, age, teff, rstar, $
+;   chi2 = massradius_mist(eep, mstar, feh, teff, rstar, $
 ;                          VVCRIT=vvcrit, ALPHA=alpha, SPAN=span,$
 ;                          MISTRSTAR=mistrstar, MISTTEFF=mistteff)
 ; INPUTS:
 ;
+;    EEP    - Equivalent Evolutionary Phase (1–808, continuous float).
+;             Primary fitted parameter replacing AGE.  AGE is derived
+;             from the track at this EEP and is no longer fitted.
 ;    MSTAR  - The mass of the star, in m_sun
-;    FEH    - The metallicity of the star [Fe/H]
-;    AGE    - The age of the star, in Gyr
+;    FEH    - The initial metallicity of the star [Fe/H]
 ;    RSTAR  - The radius you expect; used to calculate a chi^2
 ;    TEFF   - The Teff you expect; used to calculate a chi^2
 ;    
@@ -198,41 +200,42 @@ def massradius_mist(mstar, feh, age, teff, rstar, vvcrit=None, alpha=None, span=
         massndx, fehndx, vvcritndx, alphandx
     )
 
-    eep = np.searchsorted(ages, age)
-    if eep == len(ages):
-        eep -= 1
-    if eep < 1:
-        if verbose:
-            print(f"EEP ({eep}) is out of range [1, ∞]", file=logname or None)
-        return np.inf
-
+    # EEP is 1-indexed and continuous; convert to 0-based bracket indices.
     neep = len(ages)
-    if eep >= neep:
+    eep_lo = int(np.floor(eep)) - 1   # 0-based lower bracket
+    eep_hi = eep_lo + 1                # 0-based upper bracket
+    frac = eep - np.floor(eep)         # fractional part for linear interpolation
+
+    if eep_lo < 0:
         if verbose:
-            print(f"EEP ({eep}) is out of bounds for track with {neep} points", file=logname or None)
+            print(f"EEP ({eep}) is below minimum (1)", file=logname or None)
+        return np.inf
+    if eep_hi >= neep:
+        if verbose:
+            print(f"EEP ({eep}) is out of bounds for track with {neep} EEPs", file=logname or None)
         return np.inf
 
-    # Interpolation using two closest ages
-    x_eep = (age - ages[eep - 1]) / (ages[eep] - ages[eep - 1]) if ages[eep] != ages[eep - 1] else 0.0
-    mistage = (1 - x_eep) * ages[eep - 1] + x_eep * ages[eep]
-    mistrstar = (1 - x_eep) * rstars[eep - 1] + x_eep * rstars[eep]
-    mistteff = (1 - x_eep) * teffs[eep - 1] + x_eep * teffs[eep]
-    mistfeh = (1 - x_eep) * fehs[eep - 1] + x_eep * fehs[eep]
-    ageweight_interp = (1 - x_eep) * ageweights_data[eep - 1] + x_eep * ageweights_data[eep]
+    # Interpolate all quantities directly from the EEP index (no searchsorted).
+    mistage   = (1 - frac) * ages[eep_lo]   + frac * ages[eep_hi]
+    mistrstar = (1 - frac) * rstars[eep_lo] + frac * rstars[eep_hi]
+    mistteff  = (1 - frac) * teffs[eep_lo]  + frac * teffs[eep_hi]
+    mistfeh   = (1 - frac) * fehs[eep_lo]   + frac * fehs[eep_hi]
 
     if mistage < 0 or (not allowold and mistage > 13.82):
         if verbose:
-            print(f"Age ({mistage}) is out of range", file=logname or None)
+            print(f"Derived age ({mistage:.3f} Gyr) is out of range", file=logname or None)
         return np.inf
 
     percenterror = 0.03 - 0.025 * np.log10(mstar) + 0.045 * (np.log10(mstar))**2
 
+    # chi2 penalises departures of the *fitted* (teff, rstar, feh) from the
+    # MIST track prediction at this EEP.  Age is now a derived quantity, so
+    # there is no chi2_age term.
     chi2_rstar = ((mistrstar - rstar) / (rstarfloor * mistrstar if rstarfloor > 0 else percenterror * mistrstar))**2
-    chi2_teff = ((mistteff - teff) / (tefffloor * mistteff if tefffloor > 0 else percenterror * mistteff))**2
-    chi2_feh = ((mistfeh - feh) / (fehfloor if fehfloor > 0 else percenterror))**2
-    chi2_age = ((mistage - age) / (agefloor * mistage if agefloor > 0 else percenterror * mistage))**2
+    chi2_teff  = ((mistteff  - teff)  / (tefffloor  * mistteff  if tefffloor  > 0 else percenterror * mistteff))**2
+    chi2_feh   = ((mistfeh   - feh)   / (fehfloor                if fehfloor   > 0 else percenterror))**2
 
-    chi2 = chi2_rstar + chi2_teff + chi2_feh + chi2_age
+    chi2 = chi2_rstar + chi2_teff + chi2_feh
 
     if trackfile:
         _write_track_file(trackfile, teffs, rstars, ages)

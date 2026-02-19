@@ -22,7 +22,8 @@ class StellarInputs:
     feh: Optional[float] = None
     rstar: Optional[float] = None
     mstar: Optional[float] = None
-    age: Optional[float] = None
+    eep: Optional[float] = None   # primary MIST parameter (1-808, continuous)
+    age: Optional[float] = None   # derived from EEP; kept for legacy / non-MIST use
     av: Optional[float] = None
     distance: Optional[float] = None
 

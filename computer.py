@@ -1311,7 +1311,8 @@ def calculate_external_priors(params):
         feh=params.get('host_feh', None),
         rstar=params.get('host_rstar', None),
         mstar=params.get('host_mstar', None),
-        age=params.get('host_age', None),
+        eep=params.get('host_eep', None),     # primary MIST parameter (replaces age)
+        age=params.get('host_age', None),     # legacy / non-MIST use only
         av=params.get('host_av', None),
         distance=_distance,
     )
@@ -1338,6 +1339,7 @@ def calculate_external_priors(params):
         chi2 = sed_chi2(
             star,
             sed_file=sed_file,
+            sed_data=config.BASEMENT.sed_data,
             config={'errscale': config.BASEMENT.settings.get('sed_errscale', 1.0)},
         )
         if np.isfinite(chi2):
