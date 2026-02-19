@@ -1774,8 +1774,18 @@ def calculate_model(params, inst, key, xx=None, settings=None):
     elif key=='rv':
         model_rv = 0.
         for companion in settings['companions_rv']:
-            model_rv += rv_fct(params, inst, companion, xx=xx, settings=settings)[0] 
-            # RV signal measured from the host/primary (caused by a sepcific companion's gravity)
+            model_rv += rv_fct(params, inst, companion, xx=xx, settings=settings)[0]
+            # RV signal measured from the host/primary (caused by a specific companion's gravity)
+        # Global long-term RV trend (shared across instruments; EXOFASTv2-style)
+        _slope = params.get('host_rv_slope', None)
+        _quad  = params.get('host_rv_quad',  None)
+        if _slope is not None or _quad is not None:
+            _xx = xx if xx is not None else config.BASEMENT.data[inst]['time']
+            _dt = _xx - config.BASEMENT.rv_t0
+            if _slope is not None:
+                model_rv += _slope * _dt
+            if _quad is not None:
+                model_rv += _quad * _dt**2
         return model_rv
     
     elif key=='rv2':

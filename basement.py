@@ -1165,8 +1165,12 @@ class Basement():
         self.data['inst_rv2']['ind_sort'] = ind_sort
         self.data['inst_rv2']['time'] = np.array(self.data['inst_rv2']['time'])[ind_sort]
         self.data['inst_rv2']['rv2'] = np.array(self.data['inst_rv2']['rv2'])[ind_sort]
-        self.data['inst_rv2']['rv2_err'] = np.array(self.data['inst_rv2']['rv2_err'])[ind_sort]   
+        self.data['inst_rv2']['rv2_err'] = np.array(self.data['inst_rv2']['rv2_err'])[ind_sort]
         self.data['inst_rv2']['inst'] = np.array(self.data['inst_rv2']['inst'])[ind_sort]
+
+        # Midpoint of all RV times: reference epoch for global slope/quad trend
+        t_rv = self.data['inst_rv']['time']
+        self.rv_t0 = float(0.5 * (t_rv[0] + t_rv[-1])) if len(t_rv) > 0 else 0.0
 
         
             
