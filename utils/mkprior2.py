@@ -28,15 +28,15 @@ import numpy as np
 # EXOFASTv2 name → allesfast fitted param name
 # ---------------------------------------------------------------------------
 _EXOFAST_TO_ALLES = {
-    'mstar':    'host_mstar',
-    'rstar':    'host_rstar',
-    'teff':     'host_teff',
-    'feh':      'host_feh',
-    'parallax': 'host_parallax',
-    'vsini':    'host_vsini',
-    'av':       'host_av',
-    'eep':      'host_eep',
-    'age':      'host_age',
+    'mstar':    'A_mstar',
+    'rstar':    'A_rstar',
+    'teff':     'A_teff',
+    'feh':      'A_feh',
+    'parallax': 'A_parallax',
+    'vsini':    'A_vsini',
+    'av':       'A_av',
+    'eep':      'A_eep',
+    'age':      'A_age',
 }
 
 # Keys that map to companion epoch / period

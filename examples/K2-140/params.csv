@@ -11,16 +11,16 @@ b_f_s,0.0,1,uniform -1.0 1.0,$\sqrt{e_b} \sin{\omega_b}$,
 #dilution per instrument,,,,,
 
 #limb darkening coefficients per instrument,,,,,
-host_ldc_q1_K2,0.5,1,uniform 0.0 1.0,$q_{1; \mathrm{K2}}$,
-host_ldc_q2_K2,0.5,1,uniform 0.0 1.0,$q_{2; \mathrm{K2}}$,
-host_ldc_q1_Keck,0.5,1,uniform 0.0 1.0,$q_{1; \mathrm{Keck}}$,
-host_ldc_q2_Keck,0.5,1,uniform 0.0 1.0,$q_{2; \mathrm{Keck}}$,
+A_ldc_q1_K2,0.5,1,uniform 0.0 1.0,$q_{1; \mathrm{K2}}$,
+A_ldc_q2_K2,0.5,1,uniform 0.0 1.0,$q_{2; \mathrm{K2}}$,
+A_ldc_q1_Keck,0.5,1,uniform 0.0 1.0,$q_{1; \mathrm{Keck}}$,
+A_ldc_q2_Keck,0.5,1,uniform 0.0 1.0,$q_{2; \mathrm{Keck}}$,
 #surface brightness per instrument and companion,,,,,
 
 #albedo per instrument and companion,,,,,
-host_geom_albedo_K2,0.0,0,trunc_normal 0 1 0.0 0.0,$A_{\mathrm{geom}; host; \mathrm{K2}}$,
-host_geom_albedo_CORALIE,0.0,0,trunc_normal 0 1 0.0 0.0,$A_{\mathrm{geom}; host; \mathrm{CORALIE}}$,
-host_geom_albedo_Keck,0.0,0,trunc_normal 0 1 0.0 0.0,$A_{\mathrm{geom}; host; \mathrm{Keck}}$,
+A_geom_albedo_K2,0.0,0,trunc_normal 0 1 0.0 0.0,$A_{\mathrm{geom}; host; \mathrm{K2}}$,
+A_geom_albedo_CORALIE,0.0,0,trunc_normal 0 1 0.0 0.0,$A_{\mathrm{geom}; host; \mathrm{CORALIE}}$,
+A_geom_albedo_Keck,0.0,0,trunc_normal 0 1 0.0 0.0,$A_{\mathrm{geom}; host; \mathrm{Keck}}$,
 #spots per instrument and companion,,,,,
 #errors per instrument,
 ln_err_flux_K2,-7.0,1,uniform -15.0 0.0,$\ln{\sigma_\mathrm{K2}}$,$\ln{ \mathrm{rel. flux.} }$
@@ -31,32 +31,32 @@ ln_jitter_rv_Keck,-3.0,1,uniform -15.0 0.0,$\ln{\sigma_\mathrm{jitter; Keck}}$,$
 #baseline per instrument,
 
 
-host_lambda,0,1,uniform -180 180,$hostlambda_\mathrm{K2-140}$,$degree$
-host_vsini,10,1,uniform 0 20,$v \sin i_\star$,km/s
+A_lambda,0,1,uniform -180 180,$hostlambda_\mathrm{K2-140}$,$degree$
+A_vsini,10,1,uniform 0 20,$v \sin i_\star$,km/s
 
-host_xi,2,1,normal 2 1,$host_xi$,$ \mathrm{km/s}$
-host_zeta,4,1,normal 4 1,$host_zeta$,$ \mathrm{km/s}$
+A_xi,2,1,normal 2 1,$A_xi$,$ \mathrm{km/s}$
+A_zeta,4,1,normal 4 1,$A_zeta$,$ \mathrm{km/s}$
 
 baseline_quad_rv_CORALIE,0,1,uniform -10 10,quad_CORALIE,
 baseline_slope_rv_CORALIE,0,1,uniform -10 10,slope_CORALIE,
 baseline_offset_rv_CORALIE,1.1,1,uniform -10 10,offset_CORALIE,
 
 #stellar parameters (migrated from params_star.csv),,,,,
-host_rstar,1.02,1,uniform 0.1 20,$R_\star$,$R_\odot$
-host_rstar_lerr,0.06,0,fixed,$\sigma^{-}_{R_\star}$,$R_\odot$
-host_rstar_uerr,0.07,0,fixed,$\sigma^{+}_{R_\star}$,$R_\odot$
-host_mstar,1.02,1,uniform 0.1 10,$M_\star$,$M_\odot$
-host_mstar_lerr,0.04,0,fixed,$\sigma^{-}_{M_\star}$,$M_\odot$
-host_mstar_uerr,0.06,0,fixed,$\sigma^{+}_{M_\star}$,$M_\odot$
-host_teff,5712.000000,1,uniform 3500 50000,$T_{\rm eff}$,K
-host_teff_lerr,76,0,fixed,$\sigma^{-}_{T_{\mathrm{eff}}}$,$\mathrm{K}$
-host_teff_uerr,83,0,fixed,$\sigma^{+}_{T_{\mathrm{eff}}}$,$\mathrm{K}$
+A_rstar,1.02,1,uniform 0.1 20,$R_\star$,$R_\odot$
+A_rstar_lerr,0.06,0,fixed,$\sigma^{-}_{R_\star}$,$R_\odot$
+A_rstar_uerr,0.07,0,fixed,$\sigma^{+}_{R_\star}$,$R_\odot$
+A_mstar,1.02,1,uniform 0.1 10,$M_\star$,$M_\odot$
+A_mstar_lerr,0.04,0,fixed,$\sigma^{-}_{M_\star}$,$M_\odot$
+A_mstar_uerr,0.06,0,fixed,$\sigma^{+}_{M_\star}$,$M_\odot$
+A_teff,5712.000000,1,uniform 3500 50000,$T_{\rm eff}$,K
+A_teff_lerr,76,0,fixed,$\sigma^{-}_{T_{\mathrm{eff}}}$,$\mathrm{K}$
+A_teff_uerr,83,0,fixed,$\sigma^{+}_{T_{\mathrm{eff}}}$,$\mathrm{K}$
 #stellar and orbital priors from .priors file
-host_feh,0.1,1,normal 0.1 0.1,$[\rm Fe/H]$,dex
-host_parallax,2.8748,1,normal 2.8748 0.01887,$\varpi$,mas
+A_feh,0.1,1,normal 0.1 0.1,$[\rm Fe/H]$,dex
+A_parallax,2.8748,1,normal 2.8748 0.01887,$\varpi$,mas
 #limb darkening (auto-added by settings2allesfitter)
-host_ldc_q1_CORALIE,0.5,0,uniform 0.0 1.0,$q_{1; CORALIE}$,
-host_ldc_q2_CORALIE,0.5,0,uniform 0.0 1.0,$q_{2; CORALIE}$,
+A_ldc_q1_CORALIE,0.5,0,uniform 0.0 1.0,$q_{1; CORALIE}$,
+A_ldc_q2_CORALIE,0.5,0,uniform 0.0 1.0,$q_{2; CORALIE}$,
 #stellar and orbital priors from .priors file
-host_av,0,1,uniform 0 0.107221,$A_V$,mag
-host_eep,300,1,uniform 1 808,$\rm EEP$,
+A_av,0,1,uniform 0 0.107221,$A_V$,mag
+A_eep,300,1,uniform 1 808,$\rm EEP$,

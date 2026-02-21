@@ -86,10 +86,10 @@ def plot_spots_new(datadir):
         plt.subplot(111, projection="aitoff")
         plt.grid(True)
         for i in [1,2]:
-            lons = alles.posterior_params['host_spot_'+str(i)+'_long_'+inst][0:20]
-            lats = alles.posterior_params['host_spot_'+str(i)+'_lat_'+inst][0:20]
-            sizes = alles.posterior_params['host_spot_'+str(i)+'_size_'+inst][0:20]
-            brightnesses = alles.posterior_params['host_spot_'+str(i)+'_brightness_'+inst][0:20]
+            lons = alles.posterior_params['A_spot_'+str(i)+'_long_'+inst][0:20]
+            lats = alles.posterior_params['A_spot_'+str(i)+'_lat_'+inst][0:20]
+            sizes = alles.posterior_params['A_spot_'+str(i)+'_size_'+inst][0:20]
+            brightnesses = alles.posterior_params['A_spot_'+str(i)+'_brightness_'+inst][0:20]
             lon_list, lat_list, brightness_list = convert_many_points_to_an_area(lons, lats, sizes, brightnesses)
             c = SkyCoord(ra=lon_list* u.deg, dec=lat_list* u.deg)
             lon_list_aitoff = c.ra.wrap_at(180 * u.deg).radian
@@ -108,10 +108,10 @@ def plot_spots_new(datadir):
         plt.xlim([0,360])
         plt.ylim([-90,90])
         for i in [1,2]:
-            lons = alles.posterior_params['host_spot_'+str(i)+'_long_'+inst][0:20]
-            lats = alles.posterior_params['host_spot_'+str(i)+'_lat_'+inst][0:20]
-            sizes = alles.posterior_params['host_spot_'+str(i)+'_size_'+inst][0:20]
-            brightnesses = alles.posterior_params['host_spot_'+str(i)+'_brightness_'+inst][0:20]
+            lons = alles.posterior_params['A_spot_'+str(i)+'_long_'+inst][0:20]
+            lats = alles.posterior_params['A_spot_'+str(i)+'_lat_'+inst][0:20]
+            sizes = alles.posterior_params['A_spot_'+str(i)+'_size_'+inst][0:20]
+            brightnesses = alles.posterior_params['A_spot_'+str(i)+'_brightness_'+inst][0:20]
             lon_list, lat_list, brightness_list = convert_many_points_to_an_area(lons, lats, sizes, brightnesses)
             plt.scatter( lon_list, lat_list, c=brightness_list, vmin=0, vmax=1 ) 
         plt.colorbar(label='Relative spot brightness')
@@ -147,7 +147,7 @@ def plot_publication_spots_from_posteriors(datadir, Nsamples=20, command='save',
     posterior_samples = allesfast.get_ns_posterior_samples(datadir, Nsamples=Nsamples, as_type='2d_array')
     
     for inst in config.BASEMENT.settings['inst_all']:
-        if config.BASEMENT.settings['host_N_spots_'+inst] > 0:
+        if config.BASEMENT.settings['A_N_spots_'+inst] > 0:
             
             if mode=='default':
                 xx = np.linspace(config.BASEMENT.data[inst]['time'][0], config.BASEMENT.data[inst]['time'][-1], 5000)
@@ -158,10 +158,10 @@ def plot_publication_spots_from_posteriors(datadir, Nsamples=20, command='save',
             
                 params = allesfast.computer.update_params(sample)
                     
-                spots = [ [params['host_spot_'+str(i)+'_long_'+inst] for i in range(1,config.BASEMENT.settings['host_N_spots_'+inst]+1) ],
-                          [params['host_spot_'+str(i)+'_lat_'+inst] for i in range(1,config.BASEMENT.settings['host_N_spots_'+inst]+1) ],
-                          [params['host_spot_'+str(i)+'_size_'+inst] for i in range(1,config.BASEMENT.settings['host_N_spots_'+inst]+1) ],
-                          [params['host_spot_'+str(i)+'_brightness_'+inst] for i in range(1,config.BASEMENT.settings['host_N_spots_'+inst]+1) ] ]  
+                spots = [ [params['A_spot_'+str(i)+'_long_'+inst] for i in range(1,config.BASEMENT.settings['A_N_spots_'+inst]+1) ],
+                          [params['A_spot_'+str(i)+'_lat_'+inst] for i in range(1,config.BASEMENT.settings['A_N_spots_'+inst]+1) ],
+                          [params['A_spot_'+str(i)+'_size_'+inst] for i in range(1,config.BASEMENT.settings['A_N_spots_'+inst]+1) ],
+                          [params['A_spot_'+str(i)+'_brightness_'+inst] for i in range(1,config.BASEMENT.settings['A_N_spots_'+inst]+1) ] ]  
     
     
                 model = allesfast.computer.calculate_model(params, inst, 'flux')
@@ -198,9 +198,9 @@ def plot_publication_spots_from_posteriors(datadir, Nsamples=20, command='save',
                 pubdir = os.path.join(config.BASEMENT.outdir, 'pub')
                 if not os.path.exists(pubdir): os.makedirs(pubdir)
                 if mode=='default':
-                    fig.savefig( os.path.join(pubdir,'host_spots_'+inst+'.pdf'), bbox_inches='tight' )
+                    fig.savefig( os.path.join(pubdir,'A_spots_'+inst+'.pdf'), bbox_inches='tight' )
                 elif mode=='zhan2019':
-                    fig.savefig( os.path.join(pubdir,'host_spots_'+inst+'_zz.pdf'), bbox_inches='tight' )
+                    fig.savefig( os.path.join(pubdir,'A_spots_'+inst+'_zz.pdf'), bbox_inches='tight' )
                 plt.close(fig)
     
             if 'show' in command:
@@ -331,12 +331,12 @@ def plot_spots_from_posteriors(datadir, Nsamples=10, command='save'):
         
         for inst in config.BASEMENT.settings['inst_all']:
             
-            if config.BASEMENT.settings['host_N_spots_'+inst] > 0:
+            if config.BASEMENT.settings['A_N_spots_'+inst] > 0:
                 spots = [
-                         [params['host_spot_'+str(i)+'_long_'+inst] for i in range(1,config.BASEMENT.settings['host_N_spots_'+inst]+1) ],
-                         [params['host_spot_'+str(i)+'_lat_'+inst] for i in range(1,config.BASEMENT.settings['host_N_spots_'+inst]+1) ],
-                         [params['host_spot_'+str(i)+'_size_'+inst] for i in range(1,config.BASEMENT.settings['host_N_spots_'+inst]+1) ],
-                         [params['host_spot_'+str(i)+'_brightness_'+inst] for i in range(1,config.BASEMENT.settings['host_N_spots_'+inst]+1) ]
+                         [params['A_spot_'+str(i)+'_long_'+inst] for i in range(1,config.BASEMENT.settings['A_N_spots_'+inst]+1) ],
+                         [params['A_spot_'+str(i)+'_lat_'+inst] for i in range(1,config.BASEMENT.settings['A_N_spots_'+inst]+1) ],
+                         [params['A_spot_'+str(i)+'_size_'+inst] for i in range(1,config.BASEMENT.settings['A_N_spots_'+inst]+1) ],
+                         [params['A_spot_'+str(i)+'_brightness_'+inst] for i in range(1,config.BASEMENT.settings['A_N_spots_'+inst]+1) ]
                         ]
         
                 if command=='save':
@@ -344,7 +344,7 @@ def plot_spots_from_posteriors(datadir, Nsamples=10, command='save'):
                     plt.suptitle('sample '+str(sample))
                     spotsdir = os.path.join(config.BASEMENT.outdir, 'spotmaps')
                     if not os.path.exists(spotsdir): os.makedirs(spotsdir)
-                    fig.savefig( os.path.join(spotsdir,'host_spots_'+inst+'_posterior_sample_'+str(sample)) )
+                    fig.savefig( os.path.join(spotsdir,'A_spots_'+inst+'_posterior_sample_'+str(sample)) )
                     plt.close(fig)
                 
                 elif command=='show':

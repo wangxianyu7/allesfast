@@ -59,8 +59,8 @@ def tls_search(time, flux, flux_err,                                           #
                known_transits=None,                                            #mine
                mask_multiplier=1.5,                                            #mine
                show_plot=False, save_plot=False, outdir='',                    #mine
-               R_host=1., R_host_min=0.13, R_host_max=3.5,                     #tls
-               M_host=1., M_host_min=0.1, M_host_max=1.,                       #tls
+               R_host=1., R_A_min=0.13, R_A_max=3.5,                     #tls
+               M_host=1., M_A_min=0.1, M_A_max=1.,                       #tls
                ldc=[0.4804, 0.1867],                                           #tls
                n_transits_min=3,                                               #tls
                **tls_kwargs):                                                  #tls
@@ -93,19 +93,19 @@ def tls_search(time, flux, flux_err,                                           #
     R_host : float
         radius of the star (e.g. median)
         default 1 R_sun (from TLS)
-    R_host_min : float
+    R_A_min : float
         minimum radius of the star (e.g. 1st percentile)
         default 0.13 R_sun (from TLS)
-    R_host_max : float
+    R_A_max : float
         maximum radius of the star (e.g. 99th percentile)
         default 3.5 R_sun (from TLS)
     M_host : float
         mass of the star (e.g. median)
         default 1. M_sun (from TLS)
-    M_host_min : float
+    M_A_min : float
         minimum mass of the star (e.g. 1st percentile)
         default 0.1 M_sun (from TLS)
-    M_host_max : float
+    M_A_max : float
         maximum mass of the star (e.g. 99th percentile)
         default 1. M_sun (from TLS)    
     ldc : list
@@ -139,8 +139,8 @@ def tls_search(time, flux, flux_err,                                           #
     i = 0
     while (SNR >= SNR_threshold) and (FOUND_SIGNAL==False):
         model = tls(time, flux, flux_err)
-        results = model.power(R_star=R_host, R_star_min=R_host_min, R_star_max=R_host_max, 
-                              M_star=M_host, M_star_min=M_host_min, M_star_max=M_host_max,
+        results = model.power(R_star=R_host, R_star_min=R_A_min, R_star_max=R_A_max, 
+                              M_star=M_host, M_star_min=M_A_min, M_star_max=M_A_max,
                               u=ldc, 
                               n_transits_min=n_transits_min, 
                               show_progress_bar=False,
@@ -211,15 +211,15 @@ def tls_search_by_tic(tic_id, sigma_multiplier=3, **kwargs):
     time, flux, flux_err = tessio.get(tic_id, pipeline='spoc', PDC=True, unpack=True)
     
     #::: load TIC info
-    ldc, R_host, R_host_lerr, R_host_uerr, M_host, M_host_lerr, M_host_uerr = catalog_info(TIC_ID=int(tic_id))
+    ldc, R_host, R_A_lerr, R_A_uerr, M_host, M_A_lerr, M_A_uerr = catalog_info(TIC_ID=int(tic_id))
     print('\nTICv8 info:')
     print('Quadratic limb darkening u_0, u_1', ldc[0], ldc[1])
-    print('Stellar radius', R_host, '+', R_host_lerr, '-', R_host_uerr)
-    print('Stellar mass', M_host, '+', M_host_lerr, '-', M_host_uerr)
+    print('Stellar radius', R_host, '+', R_A_lerr, '-', R_A_uerr)
+    print('Stellar mass', M_host, '+', M_A_lerr, '-', M_A_uerr)
     
     return tls_search(time, flux, flux_err,
-                      R_host=R_host, R_host_min=R_host-sigma_multiplier*R_host_lerr, R_host_max=R_host+sigma_multiplier*R_host_uerr, 
-                      M_host=M_host, M_host_min=M_host-sigma_multiplier*M_host_lerr, M_host_max=M_host+sigma_multiplier*M_host_uerr,
+                      R_host=R_host, R_A_min=R_host-sigma_multiplier*R_A_lerr, R_A_max=R_host+sigma_multiplier*R_A_uerr, 
+                      M_host=M_host, M_A_min=M_host-sigma_multiplier*M_A_lerr, M_A_max=M_host+sigma_multiplier*M_A_uerr,
                       ldc=ldc,
                       **kwargs)
 

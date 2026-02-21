@@ -1076,8 +1076,8 @@ def logprint_initial_guess():
     
     logprint('\nExternal priors:')
     logprint('--------------------------')  
-    if 'host_density' in config.BASEMENT.external_priors:
-        logprint('\nStellar density prior (automatically set):', config.BASEMENT.external_priors['host_density'], '(g cm^-3)')
+    if 'A_density' in config.BASEMENT.external_priors:
+        logprint('\nStellar density prior (automatically set):', config.BASEMENT.external_priors['A_density'], '(g cm^-3)')
     else:
         logprint('No external priors defined.')
     

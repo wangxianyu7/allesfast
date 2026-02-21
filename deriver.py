@@ -405,7 +405,7 @@ def derive(samples, mode):
         #----------------------------------------------------------------------
         if companion in config.BASEMENT.settings['companions_phot']:
             if all(np.atleast_1d(get_params(companion+'_rr'))<0.215443469): #see computer.py; get_params could return np.nan (float) or array; all(np.atleast_1d(...)) takes care of that
-                derived_samples[companion+'_host_density'] = 3. * np.pi * (1./derived_samples[companion+'_R_star/a'])**3. / (get_params(companion+'_period')*86400.)**2 / 6.67408e-8 #in cgs
+                derived_samples[companion+'_A_density'] = 3. * np.pi * (1./derived_samples[companion+'_R_star/a'])**3. / (get_params(companion+'_period')*86400.)**2 / 6.67408e-8 #in cgs
   
     
         #----------------------------------------------------------------------
@@ -440,25 +440,25 @@ def derive(samples, mode):
             #- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
             #::: host
             #- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
-            if config.BASEMENT.settings['host_ld_law_'+inst] is None:
+            if config.BASEMENT.settings['A_ld_law_'+inst] is None:
                 pass
                 
-            elif config.BASEMENT.settings['host_ld_law_'+inst] == 'lin':
-                derived_samples['host_ldc_u1_'+inst] = get_params('host_ldc_q1_'+inst)
+            elif config.BASEMENT.settings['A_ld_law_'+inst] == 'lin':
+                derived_samples['A_ldc_u1_'+inst] = get_params('A_ldc_q1_'+inst)
                 
-            elif config.BASEMENT.settings['host_ld_law_'+inst] == 'quad':
-                derived_samples['host_ldc_u1_'+inst] = 2 * np.sqrt(get_params('host_ldc_q1_'+inst)) * get_params('host_ldc_q2_'+inst)
-                derived_samples['host_ldc_u2_'+inst] = np.sqrt(get_params('host_ldc_q1_'+inst)) * (1. - 2. * get_params('host_ldc_q2_'+inst))
+            elif config.BASEMENT.settings['A_ld_law_'+inst] == 'quad':
+                derived_samples['A_ldc_u1_'+inst] = 2 * np.sqrt(get_params('A_ldc_q1_'+inst)) * get_params('A_ldc_q2_'+inst)
+                derived_samples['A_ldc_u2_'+inst] = np.sqrt(get_params('A_ldc_q1_'+inst)) * (1. - 2. * get_params('A_ldc_q2_'+inst))
                 
-            elif config.BASEMENT.settings['host_ld_law_'+inst] == 'sing':
-                derived_samples['host_ldc_u1_'+inst] = np.nan*np.empty(N_samples)
-                derived_samples['host_ldc_u2_'+inst] = np.nan*np.empty(N_samples)
-                derived_samples['host_ldc_u3_'+inst] = np.nan*np.empty(N_samples)
+            elif config.BASEMENT.settings['A_ld_law_'+inst] == 'sing':
+                derived_samples['A_ldc_u1_'+inst] = np.nan*np.empty(N_samples)
+                derived_samples['A_ldc_u2_'+inst] = np.nan*np.empty(N_samples)
+                derived_samples['A_ldc_u3_'+inst] = np.nan*np.empty(N_samples)
                 for i in range(N_samples):
-                    u1, u2, u3 = LDC3.forward([get_params('host_ldc_q1_'+inst)[i], get_params('host_ldc_q2_'+inst)[i], get_params('host_ldc_q3_'+inst)[i]])
-                    derived_samples['host_ldc_u1_'+inst][i] = u1
-                    derived_samples['host_ldc_u2_'+inst][i] = u2
-                    derived_samples['host_ldc_u3_'+inst][i] = u3
+                    u1, u2, u3 = LDC3.forward([get_params('A_ldc_q1_'+inst)[i], get_params('A_ldc_q2_'+inst)[i], get_params('A_ldc_q3_'+inst)[i]])
+                    derived_samples['A_ldc_u1_'+inst][i] = u1
+                    derived_samples['A_ldc_u2_'+inst][i] = u2
+                    derived_samples['A_ldc_u3_'+inst][i] = u3
                 
             else:
                 raise ValueError("Currently only 'none', 'lin', 'quad' and 'sing' limb darkening are supported.")
@@ -467,9 +467,9 @@ def derive(samples, mode):
     #==========================================================================
     #::: median stellar density
     #==========================================================================
-    derived_samples['combined_host_density'] = []
+    derived_samples['combined_A_density'] = []
     for companion in config.BASEMENT.settings['companions_phot']:
-        try: derived_samples['combined_host_density'] = np.append(derived_samples['combined_host_density'], derived_samples[companion+'_host_density'])
+        try: derived_samples['combined_A_density'] = np.append(derived_samples['combined_A_density'], derived_samples[companion+'_A_density'])
         except: pass
     
 
@@ -538,7 +538,7 @@ def derive(samples, mode):
         names.append( companion+'_b_occ'  )
         labels.append( 'Impact parameter occultation '+companion+'; $b_\mathrm{occ;'+companion+'}$' )
         
-        names.append( companion+'_host_density' )
+        names.append( companion+'_A_density' )
         labels.append( 'Host density from orbit '+companion+'; $\\rho_\mathrm{\star;'+companion+'}$ (cgs)' )
     
         names.append( companion+'_density' )
@@ -582,32 +582,32 @@ def derive(samples, mode):
             
     #::: host
     for inst in config.BASEMENT.settings['inst_all']:    
-        if config.BASEMENT.settings['host_ld_law_'+inst] is None:
+        if config.BASEMENT.settings['A_ld_law_'+inst] is None:
             pass
             
-        elif config.BASEMENT.settings['host_ld_law_'+inst] == 'lin':
-            names.append( 'host_ldc_u1_'+inst )
+        elif config.BASEMENT.settings['A_ld_law_'+inst] == 'lin':
+            names.append( 'A_ldc_u1_'+inst )
             labels.append( 'Limb darkening; $u_\mathrm{1; '+inst+'}$' )
             
-        elif config.BASEMENT.settings['host_ld_law_'+inst] == 'quad':
-            names.append( 'host_ldc_u1_'+inst )
+        elif config.BASEMENT.settings['A_ld_law_'+inst] == 'quad':
+            names.append( 'A_ldc_u1_'+inst )
             labels.append( 'Limb darkening; $u_\mathrm{1; '+inst+'}$' )
-            names.append( 'host_ldc_u2_'+inst )
+            names.append( 'A_ldc_u2_'+inst )
             labels.append( 'Limb darkening; $u_\mathrm{2; '+inst+'}$' )
             
-        elif config.BASEMENT.settings['host_ld_law_'+inst] == 'sing':
-            names.append( 'host_ldc_u1_'+inst )
+        elif config.BASEMENT.settings['A_ld_law_'+inst] == 'sing':
+            names.append( 'A_ldc_u1_'+inst )
             labels.append( 'Limb darkening; $u_\mathrm{1; '+inst+'}$' )
-            names.append( 'host_ldc_u2_'+inst )
+            names.append( 'A_ldc_u2_'+inst )
             labels.append( 'Limb darkening; $u_\mathrm{2; '+inst+'}$' )
-            names.append( 'host_ldc_u3_'+inst )
+            names.append( 'A_ldc_u3_'+inst )
             labels.append( 'Limb darkening; $u_\mathrm{3; '+inst+'}$' )
             
         else:
             raise ValueError("Currently only 'none', 'lin', 'quad' and 'sing' limb darkening are supported.")
                 
         
-    names.append( 'combined_host_density' )
+    names.append( 'combined_A_density' )
     labels.append( 'Combined host density from all orbits; $rho_\mathrm{\star; combined}$ (cgs)' )
         
             
@@ -664,7 +664,7 @@ def derive(samples, mode):
         #=====================================================================
         #::: plot corner
         #=====================================================================
-        if 'combined_host_density' in names: names.remove('combined_host_density') #has (N_companions x N_dims) dimensions, thus does not match the rest
+        if 'combined_A_density' in names: names.remove('combined_A_density') #has (N_companions x N_dims) dimensions, thus does not match the rest
         
         #::: clean up any isolated NaN's before calling corner
         for name in names:

@@ -68,19 +68,19 @@ def get_stellar_row_from_params(params):
         "Teff_star_uerr": None,
     }
 
-    rstar, rkey = _get_value(params, ("host_rstar", "R_star"))
-    mstar, mkey = _get_value(params, ("host_mstar", "M_star"))
-    teff, tkey = _get_value(params, ("host_teff", "Teff_star"))
+    rstar, rkey = _get_value(params, ("A_rstar", "R_star"))
+    mstar, mkey = _get_value(params, ("A_mstar", "M_star"))
+    teff, tkey = _get_value(params, ("A_teff", "Teff_star"))
 
     if rstar is not None:
         row["R_star"] = rstar
-        row["R_star_lerr"], row["R_star_uerr"] = _get_err(params, rkey, alt_keys=("host_rstar", "R_star"))
+        row["R_star_lerr"], row["R_star_uerr"] = _get_err(params, rkey, alt_keys=("A_rstar", "R_star"))
     if mstar is not None:
         row["M_star"] = mstar
-        row["M_star_lerr"], row["M_star_uerr"] = _get_err(params, mkey, alt_keys=("host_mstar", "M_star"))
+        row["M_star_lerr"], row["M_star_uerr"] = _get_err(params, mkey, alt_keys=("A_mstar", "M_star"))
     if teff is not None:
         row["Teff_star"] = teff
-        row["Teff_star_lerr"], row["Teff_star_uerr"] = _get_err(params, tkey, alt_keys=("host_teff", "Teff_star"))
+        row["Teff_star_lerr"], row["Teff_star_uerr"] = _get_err(params, tkey, alt_keys=("A_teff", "Teff_star"))
 
     return row
 

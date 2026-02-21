@@ -10,15 +10,15 @@ EXOFASTv2 prior syntax (per line):
     param value sigma lo hi           # TruncNormal(value, sigma, lo, hi)
 
 Mapping to allesfitter params.csv:
-    mstar  val            -> host_mstar   uniform 0.1 10.0
-    rstar  val            -> host_rstar   uniform 0.1 20.0
-    teff   val            -> host_teff    uniform 3500 50000
-    feh    val sig        -> host_feh     normal val sig
-    parallax val sig      -> host_parallax normal val sig
+    mstar  val            -> A_mstar   uniform 0.1 10.0
+    rstar  val            -> A_rstar   uniform 0.1 20.0
+    teff   val            -> A_teff    uniform 3500 50000
+    feh    val sig        -> A_feh     normal val sig
+    parallax val sig      -> A_parallax normal val sig
     tc     val [sig]      -> b_epoch      uniform val-1 val+1
     period val [sig]      -> b_period     uniform val-1 val+1
-    vsini  val -1 lo hi   -> host_vsini   uniform lo hi
-    vsini  val sig        -> host_vsini   normal val sig
+    vsini  val -1 lo hi   -> A_vsini   uniform lo hi
+    vsini  val sig        -> A_vsini   normal val sig
     # av / appks are SED-only, skipped
 
 Usage:
@@ -98,37 +98,37 @@ _STELLAR_UNIFORM = {
 
 # allesfitter param names
 _ALLES_NAME = {
-    'mstar':    'host_mstar',
-    'rstar':    'host_rstar',
-    'teff':     'host_teff',
-    'feh':      'host_feh',
-    'parallax': 'host_parallax',
-    'vsini':    'host_vsini',
-    'av':       'host_av',
-    'age':      'host_age',
+    'mstar':    'A_mstar',
+    'rstar':    'A_rstar',
+    'teff':     'A_teff',
+    'feh':      'A_feh',
+    'parallax': 'A_parallax',
+    'vsini':    'A_vsini',
+    'av':       'A_av',
+    'age':      'A_age',
 }
 
 # Labels for params.csv
 _LABEL = {
-    'host_mstar':    r'$M_\star$',
-    'host_rstar':    r'$R_\star$',
-    'host_teff':     r'$T_{\rm eff}$',
-    'host_feh':      r'$[\rm Fe/H]$',
-    'host_parallax': r'$\varpi$',
-    'host_vsini':    r'$v \sin i_\star$',
-    'host_av':       r'$A_V$',
-    'host_age':      r'$\rm Age$',
+    'A_mstar':    r'$M_\star$',
+    'A_rstar':    r'$R_\star$',
+    'A_teff':     r'$T_{\rm eff}$',
+    'A_feh':      r'$[\rm Fe/H]$',
+    'A_parallax': r'$\varpi$',
+    'A_vsini':    r'$v \sin i_\star$',
+    'A_av':       r'$A_V$',
+    'A_age':      r'$\rm Age$',
 }
 
 _UNIT = {
-    'host_mstar':    r'$M_\odot$',
-    'host_rstar':    r'$R_\odot$',
-    'host_teff':     'K',
-    'host_feh':      'dex',
-    'host_parallax': 'mas',
-    'host_vsini':    'km/s',
-    'host_av':       'mag',
-    'host_age':      'Gyr',
+    'A_mstar':    r'$M_\odot$',
+    'A_rstar':    r'$R_\odot$',
+    'A_teff':     'K',
+    'A_feh':      'dex',
+    'A_parallax': 'mas',
+    'A_vsini':    'km/s',
+    'A_av':       'mag',
+    'A_age':      'Gyr',
 }
 
 
@@ -225,7 +225,7 @@ def priors_to_params(priorfile, companion='b',
                 bounds = f'normal {val:.6g} {sigma:.6g}'
         else:
             bounds = 'uniform 0 1'
-        rows.append(_make_row('host_av', val, bounds, _LABEL['host_av'], _UNIT['host_av']))
+        rows.append(_make_row('A_av', val, bounds, _LABEL['A_av'], _UNIT['A_av']))
 
     # -----------------------------------------------------------------------
     # age: stellar age in Gyr — free parameter, wide uniform if not in file
@@ -245,11 +245,11 @@ def priors_to_params(priorfile, companion='b',
                 bounds = f'normal {val:.6g} {sigma:.6g}'
         else:
             bounds = 'uniform 0 13.8'
-        rows.append(_make_row('host_age', val, bounds, _LABEL['host_age'], _UNIT['host_age']))
+        rows.append(_make_row('A_age', val, bounds, _LABEL['A_age'], _UNIT['A_age']))
     else:
         # age not in priors file → add as free parameter with wide uniform prior
-        rows.append(_make_row('host_age', 5.0, 'uniform 0 13.8',
-                              _LABEL['host_age'], _UNIT['host_age']))
+        rows.append(_make_row('A_age', 5.0, 'uniform 0 13.8',
+                              _LABEL['A_age'], _UNIT['A_age']))
 
     # -----------------------------------------------------------------------
     # vsini
@@ -268,8 +268,8 @@ def priors_to_params(priorfile, companion='b',
         else:
             bounds = 'uniform 0 100'
 
-        rows.append(_make_row('host_vsini', val, bounds,
-                              _LABEL['host_vsini'], _UNIT['host_vsini']))
+        rows.append(_make_row('A_vsini', val, bounds,
+                              _LABEL['A_vsini'], _UNIT['A_vsini']))
 
     # -----------------------------------------------------------------------
     # tc → b_epoch (or <companion>_epoch)

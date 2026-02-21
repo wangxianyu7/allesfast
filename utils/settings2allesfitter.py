@@ -119,7 +119,7 @@ COMPANIONS = list('bcdefghij')   # up to 9 planets
 
 def _ensure_ldc_params(params_csv, ld_insts):
     """
-    Ensure params.csv contains host_ldc_q1_{inst} and host_ldc_q2_{inst}
+    Ensure params.csv contains A_ldc_q1_{inst} and A_ldc_q2_{inst}
     rows (with uniform 0-1 prior) for every instrument in *ld_insts*.
     Skips instruments already present.  Does nothing if params.csv missing.
     """
@@ -137,7 +137,7 @@ def _ensure_ldc_params(params_csv, ld_insts):
     for inst in ld_insts:
         for qi, label in [('q1', r'$q_{1; %s}$' % inst),
                           ('q2', r'$q_{2; %s}$' % inst)]:
-            name = f'host_ldc_{qi}_{inst}'
+            name = f'A_ldc_{qi}_{inst}'
             if name not in existing_names:
                 to_add.append(f'{name},0.5,1,uniform 0.0 1.0,{label},\n')
 
@@ -329,10 +329,10 @@ def settings_to_csv(settings_path, output_path=None):
     # Limb darkening — only needed for phot and RM (flux-weighted) RV instruments
     section('Limb darkening law per object and instrument')
     for inst in phot_insts:
-        lines.append(f'host_ld_law_{inst},quad')
+        lines.append(f'A_ld_law_{inst},quad')
     for inst in rv_insts:
         if rossiter_map.get(inst, False):
-            lines.append(f'host_ld_law_{inst},quad')
+            lines.append(f'A_ld_law_{inst},quad')
 
     # Baseline
     section('Baseline settings per instrument')

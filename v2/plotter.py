@@ -122,7 +122,7 @@ def plot_info(ax, text=0, params=None, settings=None, **kwargs):
         ax.text(0,0.85,'R_comp/R_host = '+np.format_float_positional(params['rr'],5,False), transform=ax.transAxes)
         ax.text(0,0.75,'(R_comp+R_host)/a = '+np.format_float_positional(params['rsuma'],5,False), transform=ax.transAxes)
         ax.text(0,0.65,'R_comp/a = '+np.format_float_positional(params['R_companion_over_a'],5,False), transform=ax.transAxes)
-        ax.text(0,0.55,'R_host/a = '+np.format_float_positional(params['R_host_over_a'],5,False), transform=ax.transAxes)
+        ax.text(0,0.55,'R_host/a = '+np.format_float_positional(params['R_A_over_a'],5,False), transform=ax.transAxes)
         ax.text(0,0.45,'cosi = '+np.format_float_positional(params['cosi'],5,False), transform=ax.transAxes)
         ax.text(0,0.35,r'$\sqrt{e} \cos{\omega}$ = '+np.format_float_positional(params['f_c'],5,False), transform=ax.transAxes)
         ax.text(0,0.25,r'$\sqrt{e} \sin{\omega}$ = '+np.format_float_positional(params['f_s'],5,False), transform=ax.transAxes)

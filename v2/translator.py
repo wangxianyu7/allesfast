@@ -78,22 +78,22 @@ def translate_alles_to_ellc(params, settings):
         #---------------------------------------------------------------------
         #::: host
         #---------------------------------------------------------------------
-        if settings['host_ld_law_'+inst] is None:
-            params2['host_ldc_'+inst] = None
+        if settings['A_ld_law_'+inst] is None:
+            params2['A_ldc_'+inst] = None
             
-        elif settings['host_ld_law_'+inst] == 'lin':
-            params2['host_ldc_'+inst] = params2['host_ldc_q1_'+inst]
+        elif settings['A_ld_law_'+inst] == 'lin':
+            params2['A_ldc_'+inst] = params2['A_ldc_q1_'+inst]
             
-        elif settings['host_ld_law_'+inst] == 'quad':
-            ldc_u1 = 2.*np.sqrt(params2['host_ldc_q1_'+inst]) * params2['host_ldc_q2_'+inst]
-            ldc_u2 = np.sqrt(params2['host_ldc_q1_'+inst]) * (1. - 2.*params2['host_ldc_q2_'+inst])
-            params2['host_ldc_'+inst] = [ ldc_u1, ldc_u2 ]
+        elif settings['A_ld_law_'+inst] == 'quad':
+            ldc_u1 = 2.*np.sqrt(params2['A_ldc_q1_'+inst]) * params2['A_ldc_q2_'+inst]
+            ldc_u2 = np.sqrt(params2['A_ldc_q1_'+inst]) * (1. - 2.*params2['A_ldc_q2_'+inst])
+            params2['A_ldc_'+inst] = [ ldc_u1, ldc_u2 ]
             
-        elif settings['host_ld_law_'+inst] == 'sing':
+        elif settings['A_ld_law_'+inst] == 'sing':
             raise ValueError("Sorry, I have not yet implemented the Sing limb darkening law.")
             
         else:
-            print(settings['host_ld_law_'+inst] )
+            print(settings['A_ld_law_'+inst] )
             raise ValueError("Currently only 'none', 'lin', 'quad' and 'sing' limb darkening are supported.")
      
     
@@ -258,7 +258,7 @@ def translate(params=None, settings=None, quiet=False, **params_kwargs):
                     'a',
                     'ecc',
                     'omega',
-                    'r_host_over_a', 
+                    'r_A_over_a', 
                     'a_over_R_host',
                     'r_companion_over_a',
                     'r_companion_earth',
@@ -340,11 +340,11 @@ def translate(params=None, settings=None, quiet=False, **params_kwargs):
     try: set_('f_s', np.sqrt(params2['ecc']) * np.sin(np.deg2rad(params2['omega'])))
     except: pass
     
-    try: set_('r_host_over_a', ((params2['r_host']*u.Rsun) / (params2['a']*u.AU)).decompose().value)
+    try: set_('r_A_over_a', ((params2['r_host']*u.Rsun) / (params2['a']*u.AU)).decompose().value)
     except: pass
-    try: set_('r_host_over_a', params['rsuma'] / (1. + params['rr']))
+    try: set_('r_A_over_a', params['rsuma'] / (1. + params['rr']))
     except: pass
-    try: set_('r_host_over_a', 1./params2['a_over_R_host'])
+    try: set_('r_A_over_a', 1./params2['a_over_R_host'])
     except: pass
 
 
@@ -353,7 +353,7 @@ def translate(params=None, settings=None, quiet=False, **params_kwargs):
         except: pass
 
     if params2['a_over_R_host'] is None:
-        try: params2['a_over_R_host'] = 1./params2['r_host_over_a']
+        try: params2['a_over_R_host'] = 1./params2['r_A_over_a']
         except: pass
 
     if params2['r_companion_over_a'] is None:
@@ -373,7 +373,7 @@ def translate(params=None, settings=None, quiet=False, **params_kwargs):
         except: pass
     
     if params2['rsuma'] is None:
-        try: params2['rsuma'] = params2['r_host_over_a'] + params2['r_companion_over_a']
+        try: params2['rsuma'] = params2['r_A_over_a'] + params2['r_companion_over_a']
         except: pass
     
     if params2['ldc_transformed'] is None:

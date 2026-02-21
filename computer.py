@@ -160,7 +160,7 @@ def setup_transit_models(basement=None):
 def get_rm_hirano2011(time, rr, ar, period, t0, inc, ecc, omega, lambda_r, vsini, xi, zeta, u1, u2,
                       teff=5500.0, inst=None):
     """
-    teff : float  Stellar effective temperature in K (host_teff).  Used to
+    teff : float  Stellar effective temperature in K (A_teff).  Used to
                   compute thermal Gaussian broadening β_thermal.
     inst : str    RV instrument name (e.g. 'Keck', 'HARPS').  Used to look up
                   the instrumental profile width β_IP from _BETA_IP_KMS.
@@ -272,8 +272,8 @@ def update_params(theta):
     for companion in config.BASEMENT.settings['companions_all']:
         if (companion+'_rsuma') not in config.BASEMENT.fitkeys:
             try:
-                M_kg = params['host_mstar'] * _Msun_kg
-                R_m  = params['host_rstar'] * _Rsun_m
+                M_kg = params['A_mstar'] * _Msun_kg
+                R_m  = params['A_rstar'] * _Rsun_m
                 P_s  = params[companion+'_period'] * _day_s
                 a_m  = (_G_SI * M_kg * P_s**2 / (4. * np.pi**2))**(1./3.)
                 params[companion+'_rsuma'] = R_m * (1. + params[companion+'_rr']) / a_m
@@ -298,7 +298,7 @@ def update_params(theta):
     #::: limb darkening, per instrument
     #=========================================================================
     for inst in config.BASEMENT.settings['inst_all']:
-        for obj in ['host']+config.BASEMENT.settings['companions_all']:
+        for obj in ['A']+config.BASEMENT.settings['companions_all']:
         
             
             #::: if we sampled in q-space, convert the params to u-space for ellc
@@ -403,12 +403,12 @@ def update_params(theta):
             #---------------------------------------------------------------------
             #::: host spots
             #---------------------------------------------------------------------
-            if config.BASEMENT.settings['host_N_spots_'+inst] > 0:
-                params['host_spots_'+inst] = [
-                                     [params['host_spot_'+str(i)+'_long_'+inst] for i in range(1,config.BASEMENT.settings['host_N_spots_'+inst]+1) ],
-                                     [params['host_spot_'+str(i)+'_lat_'+inst] for i in range(1,config.BASEMENT.settings['host_N_spots_'+inst]+1) ],
-                                     [params['host_spot_'+str(i)+'_size_'+inst] for i in range(1,config.BASEMENT.settings['host_N_spots_'+inst]+1) ],
-                                     [params['host_spot_'+str(i)+'_brightness_'+inst] for i in range(1,config.BASEMENT.settings['host_N_spots_'+inst]+1) ]
+            if config.BASEMENT.settings['A_N_spots_'+inst] > 0:
+                params['A_spots_'+inst] = [
+                                     [params['A_spot_'+str(i)+'_long_'+inst] for i in range(1,config.BASEMENT.settings['A_N_spots_'+inst]+1) ],
+                                     [params['A_spot_'+str(i)+'_lat_'+inst] for i in range(1,config.BASEMENT.settings['A_N_spots_'+inst]+1) ],
+                                     [params['A_spot_'+str(i)+'_size_'+inst] for i in range(1,config.BASEMENT.settings['A_N_spots_'+inst]+1) ],
+                                     [params['A_spot_'+str(i)+'_brightness_'+inst] for i in range(1,config.BASEMENT.settings['A_N_spots_'+inst]+1) ]
                                     ]
         
             #---------------------------------------------------------------------
@@ -573,7 +573,7 @@ def flux_subfct_ellc(params, inst, companion, xx=None, settings=None, t_exp=None
     #-------------------------------------------------------------------------- 
     if (params[companion+'_rr'] is not None) and (params[companion+'_rr'] > 0):
         k = params[companion+'_rr']
-        ldc = params['host_ldc_'+inst]
+        ldc = params['A_ldc_'+inst]
         p = params[companion+'_period']
         t0 = params[companion+'_epoch']
         rr = params[companion+'_rr']
@@ -839,33 +839,33 @@ def flux_fct_piecewise(params, inst, companion, xx=None, settings=None):
                                   q =           params[companion+'_q'],
                                   f_c =         params[companion+'_f_c'],
                                   f_s =         params[companion+'_f_s'],
-                                  ldc_1 =       params['host_ldc_'+inst],
+                                  ldc_1 =       params['A_ldc_'+inst],
                                   ldc_2 =       params[companion+'_ldc_'+inst],
-                                  gdc_1 =       params['host_gdc_'+inst],
+                                  gdc_1 =       params['A_gdc_'+inst],
                                   gdc_2 =       params[companion+'_gdc_'+inst],
                                   didt =        params['didt_'+inst], 
                                   domdt =       params['domdt_'+inst], 
-                                  rotfac_1 =    params['host_rotfac_'+inst], 
+                                  rotfac_1 =    params['A_rotfac_'+inst], 
                                   rotfac_2 =    params[companion+'_rotfac_'+inst], 
-                                  hf_1 =        params['host_hf_'+inst], #1.5, 
+                                  hf_1 =        params['A_hf_'+inst], #1.5, 
                                   hf_2 =        params[companion+'_hf_'+inst], #1.5,
-                                  bfac_1 =      params['host_bfac_'+inst],
+                                  bfac_1 =      params['A_bfac_'+inst],
                                   bfac_2 =      params[companion+'_bfac_'+inst], 
-                                  heat_1 =      divide(params['host_heat_'+inst],2.),
+                                  heat_1 =      divide(params['A_heat_'+inst],2.),
                                   heat_2 =      divide(params[companion+'_heat_'+inst],2.),
-                                  lambda_1 =    params['host_lambda'], 
+                                  lambda_1 =    params['A_lambda'], 
                                   lambda_2 =    params[companion+'_lambda'], 
-                                  vsini_1 =     params['host_vsini'],
+                                  vsini_1 =     params['A_vsini'],
                                   vsini_2 =     params[companion+'_vsini'], 
                                   t_exp =       t_exp,
                                   n_int =       n_int,
-                                  grid_1 =      settings['host_grid_'+inst],
+                                  grid_1 =      settings['A_grid_'+inst],
                                   grid_2 =      settings[companion+'_grid_'+inst],
-                                  ld_1 =        settings['host_ld_law_'+inst],
+                                  ld_1 =        settings['A_ld_law_'+inst],
                                   ld_2 =        settings[companion+'_ld_law_'+inst],
-                                  shape_1 =     settings['host_shape_'+inst],
+                                  shape_1 =     settings['A_shape_'+inst],
                                   shape_2 =     settings[companion+'_shape_'+inst],
-                                  spots_1 =     params['host_spots_'+inst], 
+                                  spots_1 =     params['A_spots_'+inst], 
                                   spots_2 =     params[companion+'_spots_'+inst], 
                                   exact_grav =  settings['exact_grav'],
                                   verbose =     False
@@ -917,29 +917,29 @@ def flux_subfct_ellc_phase_curve_hack(params, inst, companion, xx, t_exp, n_int)
                       q =           params[companion+'_q'],
                       f_c =         params[companion+'_f_c'],
                       f_s =         params[companion+'_f_s'],
-                      ldc_1 =       params['host_ldc_'+inst],
+                      ldc_1 =       params['A_ldc_'+inst],
                       ldc_2 =       params[companion+'_ldc_'+inst],
                       gdc_1 =       0,
                       gdc_2 =       0,
                       didt =        params['didt_'+inst], 
                       domdt =       params['domdt_'+inst], 
-                      rotfac_1 =    params['host_rotfac_'+inst], 
+                      rotfac_1 =    params['A_rotfac_'+inst], 
                       rotfac_2 =    params[companion+'_rotfac_'+inst], 
-                      hf_1 =        params['host_hf_'+inst], #1.5, 
+                      hf_1 =        params['A_hf_'+inst], #1.5, 
                       hf_2 =        params[companion+'_hf_'+inst], #1.5,
                       bfac_1 =      0,
                       bfac_2 =      0, 
                       heat_1 =      0,
                       heat_2 =      0,
-                      lambda_1 =    params['host_lambda'], 
+                      lambda_1 =    params['A_lambda'], 
                       lambda_2 =    params[companion+'_lambda'], 
-                      vsini_1 =     params['host_vsini'],
+                      vsini_1 =     params['A_vsini'],
                       vsini_2 =     params[companion+'_vsini'], 
                       t_exp =       t_exp,
                       n_int =       n_int,
-                      grid_1 =      config.BASEMENT.settings['host_grid_'+inst],
+                      grid_1 =      config.BASEMENT.settings['A_grid_'+inst],
                       grid_2 =      config.BASEMENT.settings[companion+'_grid_'+inst],
-                      ld_1 =        config.BASEMENT.settings['host_ld_law_'+inst],
+                      ld_1 =        config.BASEMENT.settings['A_ld_law_'+inst],
                       ld_2 =        config.BASEMENT.settings[companion+'_ld_law_'+inst],
                       shape_1 =     'sphere',
                       shape_2 =     'sphere',
@@ -963,29 +963,29 @@ def flux_subfct_ellc_phase_curve_hack(params, inst, companion, xx, t_exp, n_int)
                       q =           params[companion+'_q'],
                       f_c =         params[companion+'_f_c'],
                       f_s =         params[companion+'_f_s'],
-                      ldc_1 =       params['host_ldc_'+inst],
+                      ldc_1 =       params['A_ldc_'+inst],
                       ldc_2 =       params[companion+'_ldc_'+inst],
                       gdc_1 =       0,
                       gdc_2 =       0,
                       didt =        params['didt_'+inst], 
                       domdt =       params['domdt_'+inst], 
-                      rotfac_1 =    params['host_rotfac_'+inst], 
+                      rotfac_1 =    params['A_rotfac_'+inst], 
                       rotfac_2 =    params[companion+'_rotfac_'+inst], 
-                      hf_1 =        params['host_hf_'+inst], #1.5, 
+                      hf_1 =        params['A_hf_'+inst], #1.5, 
                       hf_2 =        params[companion+'_hf_'+inst], #1.5,
                       bfac_1 =      0,
                       bfac_2 =      0, 
                       heat_1 =      0,
                       heat_2 =      0.1,
-                      lambda_1 =    params['host_lambda'], 
+                      lambda_1 =    params['A_lambda'], 
                       lambda_2 =    params[companion+'_lambda'], 
-                      vsini_1 =     params['host_vsini'],
+                      vsini_1 =     params['A_vsini'],
                       vsini_2 =     params[companion+'_vsini'], 
                       t_exp =       t_exp,
                       n_int =       n_int,
-                      grid_1 =      config.BASEMENT.settings['host_grid_'+inst],
+                      grid_1 =      config.BASEMENT.settings['A_grid_'+inst],
                       grid_2 =      config.BASEMENT.settings[companion+'_grid_'+inst],
-                      ld_1 =        config.BASEMENT.settings['host_ld_law_'+inst],
+                      ld_1 =        config.BASEMENT.settings['A_ld_law_'+inst],
                       ld_2 =        config.BASEMENT.settings[companion+'_ld_law_'+inst],
                       shape_1 =     'sphere',
                       shape_2 =     'sphere',
@@ -1009,29 +1009,29 @@ def flux_subfct_ellc_phase_curve_hack(params, inst, companion, xx, t_exp, n_int)
                       q =           params[companion+'_q'],
                       f_c =         params[companion+'_f_c'],
                       f_s =         params[companion+'_f_s'],
-                      ldc_1 =       params['host_ldc_'+inst],
+                      ldc_1 =       params['A_ldc_'+inst],
                       ldc_2 =       params[companion+'_ldc_'+inst],
                       gdc_1 =       0,
                       gdc_2 =       0,
                       didt =        params['didt_'+inst], 
                       domdt =       params['domdt_'+inst], 
-                      rotfac_1 =    params['host_rotfac_'+inst], 
+                      rotfac_1 =    params['A_rotfac_'+inst], 
                       rotfac_2 =    params[companion+'_rotfac_'+inst], 
-                      hf_1 =        params['host_hf_'+inst], #1.5, 
+                      hf_1 =        params['A_hf_'+inst], #1.5, 
                       hf_2 =        params[companion+'_hf_'+inst], #1.5,
                       bfac_1 =      0,
                       bfac_2 =      0, 
                       heat_1 =      0,
                       heat_2 =      0.1,
-                      lambda_1 =    params['host_lambda'], 
+                      lambda_1 =    params['A_lambda'], 
                       lambda_2 =    params[companion+'_lambda'], 
-                      vsini_1 =     params['host_vsini'],
+                      vsini_1 =     params['A_vsini'],
                       vsini_2 =     params[companion+'_vsini'], 
                       t_exp =       t_exp,
                       n_int =       n_int,
-                      grid_1 =      config.BASEMENT.settings['host_grid_'+inst],
+                      grid_1 =      config.BASEMENT.settings['A_grid_'+inst],
                       grid_2 =      config.BASEMENT.settings[companion+'_grid_'+inst],
-                      ld_1 =        config.BASEMENT.settings['host_ld_law_'+inst],
+                      ld_1 =        config.BASEMENT.settings['A_ld_law_'+inst],
                       ld_2 =        config.BASEMENT.settings[companion+'_ld_law_'+inst],
                       shape_1 =     'sphere',
                       shape_2 =     'sphere',
@@ -1136,15 +1136,15 @@ def rv_fct(params, inst, companion, xx=None, settings=None):
             period = params[companion+'_period']
             t0 = params[companion+'_epoch']
             inc = params[companion+'_incl']
-            lambda_r = params['host_lambda']
-            vsini = params['host_vsini']
-            zi = params['host_xi']
-            zeta = params['host_zeta']
+            lambda_r = params['A_lambda']
+            vsini = params['A_vsini']
+            zi = params['A_xi']
+            zeta = params['A_zeta']
             ecc = params[companion+'_ecc']
             omega = np.rad2deg(np.mod( np.arctan2(params[companion+'_f_s'], params[companion+'_f_c']), 2*np.pi))
-            q1, q2 = params['host_ldc_'+inst]
+            q1, q2 = params['A_ldc_'+inst]
             u1 = 2*np.sqrt(q1)*q2; u2 = np.sqrt(q1)*(1-2*q2)
-            teff_val = params.get('host_teff', 5500.0)
+            teff_val = params.get('A_teff', 5500.0)
             if len(time) == 0:
                 # print('Warning: no data points inside transit window for', inst, 'with parameters:', rr, ar, period, t0, inc, lambda_r, vsini, zi, zeta, ecc, omega, q1, q2, u1, u2)
                 pass  # no data inside transit window, rm stays zero
@@ -1194,20 +1194,20 @@ def calculate_external_priors(params):
     lnp = 0.        
     
     #::: optional stellar-model priors (single-star for now)
-    _distance = params.get('host_distance', None)
+    _distance = params.get('A_distance', None)
     if _distance is None:
-        _parallax = params.get('host_parallax', None)
+        _parallax = params.get('A_parallax', None)
         if _parallax is not None and _parallax > 0:
             _distance = 1000.0 / _parallax   # mas → pc
     star = StellarInputs(
-        teff=params.get('host_teff', None),
-        logg=params.get('host_logg', None),
-        feh=params.get('host_feh', None),
-        rstar=params.get('host_rstar', None),
-        mstar=params.get('host_mstar', None),
-        eep=params.get('host_eep', None),     # primary MIST parameter (replaces age)
-        age=params.get('host_age', None),     # legacy / non-MIST use only
-        av=params.get('host_av', None),
+        teff=params.get('A_teff', None),
+        logg=params.get('A_logg', None),
+        feh=params.get('A_feh', None),
+        rstar=params.get('A_rstar', None),
+        mstar=params.get('A_mstar', None),
+        eep=params.get('A_eep', None),     # primary MIST parameter (replaces age)
+        age=params.get('A_age', None),     # legacy / non-MIST use only
+        av=params.get('A_av', None),
         distance=_distance,
     )
 
@@ -1296,7 +1296,7 @@ def calculate_external_priors(params):
 # def calculate_lnlike_detached_binary(params, inst):
 #     """
 #     This only works right now for the following conditions:
-#         - it's a detached binary, consisting of 'host' and 'B'
+#         - it's a detached binary, consisting of 'A' and 'B'
 #         - there are no other companions
 #         - can't use hybrid baseline, hybrid errors, nor GPs for RVs
 #     """  
@@ -1397,7 +1397,7 @@ def calculate_lnlike_total(params):
     for key, key2 in zip(['flux', 'rv', 'rv2'], ['inst_phot', 'inst_rv', 'inst_rv2']):      
         """
         Fitting detached binaries (with rv2 and inst_rv2) only works under the following conditions:
-            - it's a detached binary, consisting of only 'host' and 'B'
+            - it's a detached binary, consisting of only 'A' and 'B'
             - the host's RV signal is given in the inst_rv file
             - the companion's RV signal is given in the inst_rv2 file
             - there are no other companions
@@ -1671,8 +1671,8 @@ def calculate_model(params, inst, key, xx=None, settings=None):
             model_rv += rv_fct(params, inst, companion, xx=xx, settings=settings)[0]
             # RV signal measured from the host/primary (caused by a specific companion's gravity)
         # Global long-term RV trend (shared across instruments; EXOFASTv2-style)
-        _slope = params.get('host_rv_slope', None)
-        _quad  = params.get('host_rv_quad',  None)
+        _slope = params.get('A_rv_slope', None)
+        _quad  = params.get('A_rv_quad',  None)
         if _slope is not None or _quad is not None:
             _xx = xx if xx is not None else config.BASEMENT.data[inst]['time']
             _dt = _xx - config.BASEMENT.rv_t0

@@ -188,7 +188,7 @@ class Basement():
                 rows[i][0] = 'companions'+name[7:]
                 warnings.warn('You are using outdated keywords. Automatically renaming '+name+' ---> '+rows[i][0]+'. Please fix this before the Duolingo owl comes to get you.') #, category=DeprecationWarning)
             if name[:6]=='ld_law':
-                rows[i][0] = 'host_ld_law'+name[6:]
+                rows[i][0] = 'A_ld_law'+name[6:]
                 warnings.warn('You are using outdated keywords. Automatically renaming '+name+' ---> '+rows[i][0]+'. Please fix this before the Duolingo owl comes to get you.') #, category=DeprecationWarning)
                 
 #        self.settings = {r[0]:r[1] for r in rows}
@@ -445,26 +445,26 @@ class Basement():
         for companion in self.settings['companions_all']:
             for inst in self.settings['inst_all']:
                 
-                if 'host_grid_'+inst not in self.settings: 
-                    self.settings['host_grid_'+inst] = 'default'
+                if 'A_grid_'+inst not in self.settings: 
+                    self.settings['A_grid_'+inst] = 'default'
                     
                 if companion+'_grid_'+inst not in self.settings: 
                     self.settings[companion+'_grid_'+inst] = 'default'
                     
-                if is_empty_or_none('host_ld_law_'+inst): 
-                    self.settings['host_ld_law_'+inst] = None
+                if is_empty_or_none('A_ld_law_'+inst): 
+                    self.settings['A_ld_law_'+inst] = None
                     
                 if is_empty_or_none(companion+'_ld_law_'+inst):
                     self.settings[companion+'_ld_law_'+inst] = None
  
-                if is_empty_or_none('host_ld_space_'+inst): 
-                    self.settings['host_ld_space_'+inst] = 'q'
+                if is_empty_or_none('A_ld_space_'+inst): 
+                    self.settings['A_ld_space_'+inst] = 'q'
                     
                 if is_empty_or_none(companion+'_ld_space_'+inst):
                     self.settings[companion+'_ld_space_'+inst] = 'q'        
                     
-                if 'host_shape_'+inst not in self.settings: 
-                    self.settings['host_shape_'+inst] = 'sphere'
+                if 'A_shape_'+inst not in self.settings: 
+                    self.settings['A_shape_'+inst] = 'sphere'
                     
                 if companion+'_shape_'+inst not in self.settings: 
                     self.settings[companion+'_shape_'+inst] = 'sphere'
@@ -618,10 +618,10 @@ class Basement():
         #::: Number of spots
         #::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
         for inst in self.settings['inst_all']:
-            if 'host_N_spots_'+inst in self.settings and len(self.settings['host_N_spots_'+inst]):
-                self.settings['host_N_spots_'+inst] = int(self.settings['host_N_spots_'+inst])
+            if 'A_N_spots_'+inst in self.settings and len(self.settings['A_N_spots_'+inst]):
+                self.settings['A_N_spots_'+inst] = int(self.settings['A_N_spots_'+inst])
             else:
-                self.settings['host_N_spots_'+inst] = 0
+                self.settings['A_N_spots_'+inst] = 0
         
             for companion in self.settings['companions_all']:
                 if companion+'_N_spots'+inst in self.settings:
@@ -671,10 +671,10 @@ class Basement():
         # (has to happend first thing and right inside buf['name'])
         #==========================================================================
         for inst in self.settings['inst_all']:
-            backwards_compability(key_new='host_ldc_q1_'+inst, key_deprecated='ldc_q1_'+inst)
-            backwards_compability(key_new='host_ldc_q2_'+inst, key_deprecated='ldc_q2_'+inst)
-            backwards_compability(key_new='host_ldc_q3_'+inst, key_deprecated='ldc_q3_'+inst)
-            backwards_compability(key_new='host_ldc_q4_'+inst, key_deprecated='ldc_q4_'+inst)
+            backwards_compability(key_new='A_ldc_q1_'+inst, key_deprecated='ldc_q1_'+inst)
+            backwards_compability(key_new='A_ldc_q2_'+inst, key_deprecated='ldc_q2_'+inst)
+            backwards_compability(key_new='A_ldc_q3_'+inst, key_deprecated='ldc_q3_'+inst)
+            backwards_compability(key_new='A_ldc_q4_'+inst, key_deprecated='ldc_q4_'+inst)
             backwards_compability(key_new='ln_err_flux_'+inst, key_deprecated='log_err_flux_'+inst)
             backwards_compability(key_new='ln_jitter_rv_'+inst, key_deprecated='log_jitter_rv_'+inst)
             backwards_compability(key_new='baseline_gp_matern32_lnsigma_flux_'+inst, key_deprecated='baseline_gp1_flux_'+inst)
@@ -742,7 +742,7 @@ class Basement():
                                      "Parameters: {}".format(matches))  
                         
         for inst in self.settings['inst_all']:
-            for obj in ['host'] + self.settings['companions_all']:   
+            for obj in ['A'] + self.settings['companions_all']:   
                 check_ld(obj, inst)
             
             
@@ -770,20 +770,20 @@ class Basement():
                 validate('dil_'+inst, 0., -np.inf, np.inf)
                 
                 #::: limb darkenings, u-space
-                validate('host_ldc_u1_'+inst, None, 0, 1)
-                validate('host_ldc_u2_'+inst, None, 0, 1)
-                validate('host_ldc_u3_'+inst, None, 0, 1)
-                validate('host_ldc_u4_'+inst, None, 0, 1)
+                validate('A_ldc_u1_'+inst, None, 0, 1)
+                validate('A_ldc_u2_'+inst, None, 0, 1)
+                validate('A_ldc_u3_'+inst, None, 0, 1)
+                validate('A_ldc_u4_'+inst, None, 0, 1)
                 validate(companion+'_ldc_u1_'+inst, None, 0, 1)
                 validate(companion+'_ldc_u2_'+inst, None, 0, 1)
                 validate(companion+'_ldc_u3_'+inst, None, 0, 1)
                 validate(companion+'_ldc_u4_'+inst, None, 0, 1)
 
                 #::: limb darkenings, q-space
-                validate('host_ldc_q1_'+inst, None, 0, 1)
-                validate('host_ldc_q2_'+inst, None, 0, 1)
-                validate('host_ldc_q3_'+inst, None, 0, 1)
-                validate('host_ldc_q4_'+inst, None, 0, 1)
+                validate('A_ldc_q1_'+inst, None, 0, 1)
+                validate('A_ldc_q2_'+inst, None, 0, 1)
+                validate('A_ldc_q3_'+inst, None, 0, 1)
+                validate('A_ldc_q4_'+inst, None, 0, 1)
                 validate(companion+'_ldc_q1_'+inst, None, 0, 1)
                 validate(companion+'_ldc_q2_'+inst, None, 0, 1)
                 validate(companion+'_ldc_q3_'+inst, None, 0, 1)
@@ -800,13 +800,13 @@ class Basement():
                 validate('didt_'+inst, None, -np.inf, np.inf)
                 validate('domdt_'+inst, None, -np.inf, np.inf)
                 
-                validate('host_gdc_'+inst, None, 0., 1.)
-                validate('host_rotfac_'+inst, 1., 0., np.inf)
-                validate('host_hf_'+inst, 1.5, -np.inf, np.inf)
-                validate('host_bfac_'+inst, None, -np.inf, np.inf)
-                validate('host_heat_'+inst, None, -np.inf, np.inf)
-                validate('host_lambda', None, -np.inf, np.inf)
-                validate('host_vsini', None, -np.inf, np.inf)
+                validate('A_gdc_'+inst, None, 0., 1.)
+                validate('A_rotfac_'+inst, 1., 0., np.inf)
+                validate('A_hf_'+inst, 1.5, -np.inf, np.inf)
+                validate('A_bfac_'+inst, None, -np.inf, np.inf)
+                validate('A_heat_'+inst, None, -np.inf, np.inf)
+                validate('A_lambda', None, -np.inf, np.inf)
+                validate('A_vsini', None, -np.inf, np.inf)
                 
                 validate(companion+'_gdc_'+inst, None, 0., 1.)
                 validate(companion+'_rotfac_'+inst, 1., 0., np.inf)
@@ -817,8 +817,8 @@ class Basement():
                 validate(companion+'_vsini', None, -np.inf, np.inf)
         
                 #::: special parameters (list type)
-                if 'host_spots_'+inst not in self.params:
-                    self.params['host_spots_'+inst] = None
+                if 'A_spots_'+inst not in self.params:
+                    self.params['A_spots_'+inst] = None
                 if companion+'_spots_'+inst not in self.params:
                     self.params[companion+'_spots_'+inst] = None
                     
@@ -894,8 +894,8 @@ class Basement():
                     phase_curve_model_2 = ((self.params[companion+'_phase_curve_B1t_'+inst] is not None) or (self.params[companion+'_phase_curve_B1r_'+inst] is not None))
                     phase_curve_model_3 = (self.params[companion+'_phase_curve_atmospheric_'+inst] is not None)
                     phase_curve_model_4 = ((self.params[companion+'_phase_curve_atmospheric_thermal_'+inst] is not None) or (self.params[companion+'_phase_curve_atmospheric_reflected_'+inst] is not None))
-                    phase_curve_model_5 = ((self.params['host_bfac_'+inst] is not None) or (self.params['host_heat_'+inst] is not None) or \
-                                           (self.params['host_gdc_'+inst] is not None) or (self.settings['host_shape_'+inst]!='sphere') or \
+                    phase_curve_model_5 = ((self.params['A_bfac_'+inst] is not None) or (self.params['A_heat_'+inst] is not None) or \
+                                           (self.params['A_gdc_'+inst] is not None) or (self.settings['A_shape_'+inst]!='sphere') or \
                                            (self.params[companion+'_bfac_'+inst] is not None) or (self.params[companion+'_heat_'+inst] is not None) or \
                                            (self.params[companion+'_gdc_'+inst] is not None) or (self.settings[companion+'_shape_'+inst]!='sphere'))
                     if (phase_curve_model_1 + phase_curve_model_2 + phase_curve_model_3 + phase_curve_model_4 + phase_curve_model_5) > 1:

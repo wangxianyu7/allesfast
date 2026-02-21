@@ -129,8 +129,8 @@ def to_do_or_not_to_do_that_is_the_question(ex, period, rplanet):
 #                     m_host=m_host, 
 #                     quiet=True)
 #     alles = allesclass2()
-#     alles.settings = {'companions_phot':['b'], 'inst_phot':['telescope'], 'host_ld_law_telescope':'quad'}
-#     alles.params = {'b_rr':dic['rr'], 'b_rsuma':dic['rsuma'], 'b_epoch':epoch, 'b_period':period, 'host_ldc_telescope':ldc}
+#     alles.settings = {'companions_phot':['b'], 'inst_phot':['telescope'], 'A_ld_law_telescope':'quad'}
+#     alles.params = {'b_rr':dic['rr'], 'b_rsuma':dic['rsuma'], 'b_epoch':epoch, 'b_period':period, 'A_ldc_telescope':ldc}
 #     alles.params_host = {'R_host':r_host, 'M_host':m_host}
 #     alles.fill()   
     
@@ -153,17 +153,17 @@ def to_do_or_not_to_do_that_is_the_question(ex, period, rplanet):
 # ::: a fast injection for a simple, circular, and small planet
 def inject(time, flux, flux_err, epoch, period, r_companion_earth, r_host=1, m_host=1, ldc=[0.5,0.5], dil=0, return_depth=False, window=None):
     a = ( (G/(4*np.pi**2) * (period*u.d)**2 * (m_host*u.Msun))**(1./3.) ).to(u.AU).value  #in AU 
-    r_host_over_a = ((r_host*u.Rsun)/(a*u.AU)).decompose().value #unitless
+    r_A_over_a = ((r_host*u.Rsun)/(a*u.AU)).decompose().value #unitless
     r_companion_over_a = ((r_companion_earth*u.Rearth)/(a*u.AU)).decompose().value #unitless
-    rr = r_companion_over_a/r_host_over_a
-    rsuma = r_companion_over_a + r_host_over_a
+    rr = r_companion_over_a/r_A_over_a
+    rsuma = r_companion_over_a + r_A_over_a
     
     ind_ecl1, ind_ecl2, ind_out = index_eclipses_smart(time, epoch, period, rr, rsuma, 0., 0., 0., extra_factor=1.1)
     model_flux = np.ones_like(time)
     if len(ind_ecl1) > 0:
         model_flux[ind_ecl1] = ellc.lc(
                                       t_obs = time[ind_ecl1], 
-                                      radius_1 = r_host_over_a, 
+                                      radius_1 = r_A_over_a, 
                                       radius_2 = r_companion_over_a, 
                                       sbratio = 0., 
                                       incl = 90., 
@@ -179,7 +179,7 @@ def inject(time, flux, flux_err, epoch, period, r_companion_earth, r_host=1, m_h
     if return_depth == True:
         depth = 1. - ellc.lc(
                             t_obs = [epoch], 
-                            radius_1 = r_host_over_a, 
+                            radius_1 = r_A_over_a, 
                             radius_2 = r_companion_over_a, 
                             sbratio = 0., 
                             incl = 90., 

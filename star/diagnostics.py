@@ -147,20 +147,20 @@ def _scale_atmosphere(lamflam, rstar, distance):
 # ---------------------------------------------------------------------------
 
 def _star_from_params(params):
-    distance = params.get("host_distance", None)
+    distance = params.get("A_distance", None)
     if distance is None:
-        parallax = params.get("host_parallax", None)
+        parallax = params.get("A_parallax", None)
         if parallax is not None and float(parallax) > 0:
             distance = 1000.0 / float(parallax)   # mas → pc
     return StellarInputs(
-        teff=params.get("host_teff", None),
-        logg=params.get("host_logg", None),
-        feh=params.get("host_feh", None),
-        rstar=params.get("host_rstar", None),
-        mstar=params.get("host_mstar", None),
-        eep=params.get("host_eep", None),
-        age=params.get("host_age", None),
-        av=params.get("host_av", None),
+        teff=params.get("A_teff", None),
+        logg=params.get("A_logg", None),
+        feh=params.get("A_feh", None),
+        rstar=params.get("A_rstar", None),
+        mstar=params.get("A_mstar", None),
+        eep=params.get("A_eep", None),
+        age=params.get("A_age", None),
+        av=params.get("A_av", None),
         distance=distance,
     )
 

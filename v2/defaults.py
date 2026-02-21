@@ -48,9 +48,9 @@ def get_hot_jupiter_params():
     default_params['b_f_s'] = 0.
     default_params['dil_Leonardo'] = 0.
     default_params['b_sbratio_Leonardo'] = 0.
-    default_params['host_ldc_q1_Leonardo'] = 0.44502241000000003 #in q-space; quadratic limb darkening for a solar-type star
-    default_params['host_ldc_q2_Leonardo'] = 0.3600659571278669 #in q-space; quadratic limb darkening for a solar-type star
-    default_params['host_gdc_Leonardo'] = None
+    default_params['A_ldc_q1_Leonardo'] = 0.44502241000000003 #in q-space; quadratic limb darkening for a solar-type star
+    default_params['A_ldc_q2_Leonardo'] = 0.3600659571278669 #in q-space; quadratic limb darkening for a solar-type star
+    default_params['A_gdc_Leonardo'] = None
     default_params['b_gdc_Leonardo'] = None
     return default_params
 
@@ -70,7 +70,7 @@ def get_hot_jupiter_settings():
                         'inst_phot':['Leonardo'],
                         'inst_rv':[],
                         'fit_ttvs':False,
-                        'host_ld_law_Leonardo':'quad',
+                        'A_ld_law_Leonardo':'quad',
                         'b_ld_law_Leonardo':None}
     return default_settings
 
@@ -129,14 +129,14 @@ def fill_params(params=None, settings=None):
             if companion+'_f_s' not in params:
                 params[companion+'_f_s'] = 0.
                 
-            if 'host_ldc_'+inst not in params:
-                params['host_ldc_'+inst] = None
+            if 'A_ldc_'+inst not in params:
+                params['A_ldc_'+inst] = None
                 
             if companion+'_ldc_'+inst not in params:
                 params[companion+'_ldc_'+inst] = None
                 
-            if 'host_gdc_'+inst not in params:
-                params['host_gdc_'+inst] = None
+            if 'A_gdc_'+inst not in params:
+                params['A_gdc_'+inst] = None
                 
             if companion+'_gdc_'+inst not in params:
                 params[companion+'_gdc_'+inst] = None
@@ -147,44 +147,44 @@ def fill_params(params=None, settings=None):
             if 'domdt_'+inst not in params:
                 params['domdt_'+inst] = None
                 
-            if 'host_rotfac_'+inst not in params:
-                params['host_rotfac_'+inst] = 1.
+            if 'A_rotfac_'+inst not in params:
+                params['A_rotfac_'+inst] = 1.
                 
             if companion+'_rotfac_'+inst not in params:
                 params[companion+'_rotfac_'+inst] = 1.
                 
-            if 'host_hf_'+inst not in params:
-                params['host_hf_'+inst] = 1.5
+            if 'A_hf_'+inst not in params:
+                params['A_hf_'+inst] = 1.5
                 
             if companion+'_hf_'+inst not in params:
                 params[companion+'_hf_'+inst] = 1.5
                 
-            if 'host_bfac_'+inst not in params:
-                params['host_bfac_'+inst] = None
+            if 'A_bfac_'+inst not in params:
+                params['A_bfac_'+inst] = None
                 
             if companion+'_bfac_'+inst not in params:
                 params[companion+'_bfac_'+inst] = None
                 
-            if 'host_heat_'+inst not in params:
-                params['host_heat_'+inst] = None
+            if 'A_heat_'+inst not in params:
+                params['A_heat_'+inst] = None
                 
             if companion+'_heat_'+inst not in params:
                 params[companion+'_heat_'+inst] = None
                 
-            if 'host_lambda_'+inst not in params:
-                params['host_lambda_'+inst] = None
+            if 'A_lambda_'+inst not in params:
+                params['A_lambda_'+inst] = None
                 
             if companion+'_lambda_'+inst not in params:
                 params[companion+'_lambda_'+inst] = None
                 
-            if 'host_vsini' not in params:
-                params['host_vsini'] = None
+            if 'A_vsini' not in params:
+                params['A_vsini'] = None
                 
             if companion+'_vsini' not in params:
                 params[companion+'_vsini'] = None
                 
-            if 'host_spots_'+inst not in params:
-                params['host_spots_'+inst] = None
+            if 'A_spots_'+inst not in params:
+                params['A_spots_'+inst] = None
                 
             if companion+'_spots_'+inst not in params:
                 params[companion+'_spots_'+inst] = None
@@ -261,20 +261,20 @@ def fill_settings(settings=None):
     for companion in companions_all:
         for inst in inst_all:
             
-            if 'host_ld_law_'+inst not in settings:
-                settings['host_ld_law_'+inst] = None
+            if 'A_ld_law_'+inst not in settings:
+                settings['A_ld_law_'+inst] = None
                 
             if companion+'_ld_law_'+inst not in settings:
                 settings[companion+'_ld_law_'+inst] = None
             
-            if 'host_grid_'+inst not in settings:
-                settings['host_grid_'+inst] = 'default'
+            if 'A_grid_'+inst not in settings:
+                settings['A_grid_'+inst] = 'default'
                 
             if companion+'_grid_'+inst not in settings:
                 settings[companion+'_grid_'+inst] = 'default'
             
-            if 'host_shape_'+inst not in settings:
-                settings['host_shape_'+inst] = 'sphere'
+            if 'A_shape_'+inst not in settings:
+                settings['A_shape_'+inst] = 'sphere'
                 
             if companion+'_shape_'+inst not in settings:
                 settings[companion+'_shape_'+inst] = 'sphere'

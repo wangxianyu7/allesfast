@@ -84,9 +84,9 @@ def get_epoch_occ(epoch, period, f_s, f_c):
 
 
 
-def get_Rhost_over_a(rr, rsuma):
-    Rhost_over_a = rsuma / (1. + rr)
-    return Rhost_over_a
+def get_RA_over_a(rr, rsuma):
+    RA_over_a = rsuma / (1. + rr)
+    return RA_over_a
     
 
 
@@ -102,7 +102,7 @@ def impact_parameters_smart(rr, rsuma, cosi, f_s, f_c):
     #--------------------------------------------------------------------------
     #::: inputs
     #--------------------------------------------------------------------------
-    Rhost_over_a = get_Rhost_over_a(rr, rsuma)
+    RA_over_a = get_RA_over_a(rr, rsuma)
     ecc, esinw, ecosw = get_ecc_esinw_ecosw(f_s, f_c)
     
     
@@ -110,10 +110,10 @@ def impact_parameters_smart(rr, rsuma, cosi, f_s, f_c):
     #::: impact parameters
     #--------------------------------------------------------------------------
     eccentricity_correction_b_1 = ( (1. - ecc**2) / ( 1. + esinw ) )
-    b_1 = (1./Rhost_over_a) * cosi * eccentricity_correction_b_1
+    b_1 = (1./RA_over_a) * cosi * eccentricity_correction_b_1
     
     eccentricity_correction_b_2 = ( (1. - ecc**2) / ( 1. - esinw ) )
-    b_2 = (1./Rhost_over_a) * cosi * eccentricity_correction_b_2
+    b_2 = (1./RA_over_a) * cosi * eccentricity_correction_b_2
     
     
     #--------------------------------------------------------------------------
@@ -127,7 +127,7 @@ def eclipse_width_smart(period, rr, rsuma, cosi, f_s, f_c):
     #--------------------------------------------------------------------------
     #::: inputs
     #--------------------------------------------------------------------------
-    Rhost_over_a = get_Rhost_over_a(rr, rsuma)
+    RA_over_a = get_RA_over_a(rr, rsuma)
     ecc, esinw, ecosw = get_ecc_esinw_ecosw(f_s, f_c)
     
     
@@ -142,7 +142,7 @@ def eclipse_width_smart(period, rr, rsuma, cosi, f_s, f_c):
     #--------------------------------------------------------------------------
     eccentricity_correction_width_1 = ( np.sqrt(1. - ecc**2) / ( 1. + esinw ) )
     width_1 = period/np.pi  \
-            * np.arcsin( Rhost_over_a \
+            * np.arcsin( RA_over_a \
                          * np.sqrt( (1. + rr)**2 - b_1**2  )\
                          / np.sin(np.arccos(cosi)) ) \
             * eccentricity_correction_width_1
