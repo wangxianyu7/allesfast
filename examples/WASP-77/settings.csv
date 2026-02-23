@@ -1,0 +1,30 @@
+companions_phot,b
+companions_rv,b
+inst_phot,TESS120 TESS600
+inst_rv,CORALIE HARPS HARPSjiang0 HARPSjiang1 HARPSjiang2 HARPSW77
+mcmc_sampler,demcpt
+mcmc_total_steps,20000
+mcmc_nwalkers,64
+mcmc_ntemps,8
+mcmc_thin_by,10
+mcmc_maxgr,1.01
+mcmc_mintz,1000
+de_ngen,10000
+use_mist_prior,True
+use_sed_prior,True
+sed_file,1129033.sed
+t_exp_TESS120,0.0013889
+t_exp_n_int_TESS120,1
+t_exp_TESS600,0.0069444
+t_exp_n_int_TESS600,5
+A_ld_law_TESS120,quad
+A_ld_law_TESS600,quad
+A_ld_law_HARPSjiang0,quad
+A_ld_law_HARPSjiang1,quad
+A_ld_law_HARPSjiang2,quad
+A_ld_law_HARPSW77,quad
+b_flux_weighted_HARPSjiang0,True
+b_flux_weighted_HARPSjiang1,True
+b_flux_weighted_HARPSjiang2,True
+b_flux_weighted_HARPSW77,True
+cornerplot,False
