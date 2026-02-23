@@ -1179,8 +1179,18 @@ def calculate_external_priors(params):
     bounds has to be list of len(theta), containing tuples of form
     ('none'), ('uniform', lower bound, upper bound), or ('normal', mean, std)
     '''
-    lnp = 0.        
-    
+    lnp = 0.
+
+    #::: soft-link penalty: Gaussian prior on (param - coupled_ref) / tolerance
+    for i, key in enumerate(config.BASEMENT.allkeys):
+        tol = config.BASEMENT.coupled_tolerance[i]
+        ref_key = config.BASEMENT.coupled_with[i]
+        if isinstance(ref_key, str) and len(ref_key) > 0 and tol > 0:
+            val = params.get(key)
+            ref = params.get(ref_key)
+            if val is not None and ref is not None and np.isfinite(float(val)) and np.isfinite(float(ref)):
+                lnp -= 0.5 * ((float(val) - float(ref)) / tol) ** 2
+
     #::: optional stellar-model priors (single-star for now)
     _distance = params.get('A_distance', None)
     if _distance is None:
