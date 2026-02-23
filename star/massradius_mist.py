@@ -51,6 +51,26 @@ def _feh_index(feh):
     return int(np.argmin(np.abs(ALLOWED_INITFEH - feh)))
 
 
+def _mass_bracket(mstar):
+    """Return (lower_idx, frac) for bilinear interpolation in stellar mass."""
+    idx = int(np.searchsorted(ALLOWED_MASS, mstar))
+    lo = min(max(idx - 1, 0), len(ALLOWED_MASS) - 2)
+    hi = lo + 1
+    span = ALLOWED_MASS[hi] - ALLOWED_MASS[lo]
+    frac = float(np.clip((mstar - ALLOWED_MASS[lo]) / span, 0.0, 1.0)) if span > 0 else 0.0
+    return lo, frac
+
+
+def _feh_bracket(feh):
+    """Return (lower_idx, frac) for bilinear interpolation in [Fe/H]."""
+    idx = int(np.searchsorted(ALLOWED_INITFEH, feh))
+    lo = min(max(idx - 1, 0), len(ALLOWED_INITFEH) - 2)
+    hi = lo + 1
+    span = ALLOWED_INITFEH[hi] - ALLOWED_INITFEH[lo]
+    frac = float(np.clip((feh - ALLOWED_INITFEH[lo]) / span, 0.0, 1.0)) if span > 0 else 0.0
+    return lo, frac
+
+
 def _vvcrit_index(vvcrit):
     matches = np.where(np.isclose(ALLOWED_VVCRIT, vvcrit))[0]
     if len(matches) == 0:
@@ -187,39 +207,54 @@ def massradius_mist(eep, mstar, feh, teff, rstar, vvcrit=None, alpha=None, span=
         return np.inf
 
     try:
-        massndx = _mass_index(mstar)
-        fehndx = _feh_index(feh)
+        mass_lo, mass_frac = _mass_bracket(mstar)
+        feh_lo,  feh_frac  = _feh_bracket(feh)
         vvcritndx = 0 if vvcrit is None else _vvcrit_index(vvcrit)
-        alphandx = 0 if alpha is None else _alpha_index(alpha)
+        alphandx  = 0 if alpha is None else _alpha_index(alpha)
     except ValueError as exc:
         if verbose:
             print(str(exc), file=logname or None)
         return np.inf
 
-    ages, rstars, teffs, fehs, ageweights_data = _get_track_tuple_cached(
-        massndx, fehndx, vvcritndx, alphandx
-    )
-
     # EEP is 1-indexed and continuous; convert to 0-based bracket indices.
-    neep = len(ages)
-    eep_lo = int(np.floor(eep)) - 1   # 0-based lower bracket
-    eep_hi = eep_lo + 1                # 0-based upper bracket
-    frac = eep - np.floor(eep)         # fractional part for linear interpolation
+    eep_lo  = int(np.floor(eep)) - 1   # 0-based lower bracket
+    eep_hi  = eep_lo + 1               # 0-based upper bracket
+    eep_frac = eep - np.floor(eep)     # fractional part for EEP interpolation
 
     if eep_lo < 0:
         if verbose:
             print(f"EEP ({eep}) is below minimum (1)", file=logname or None)
         return np.inf
-    if eep_hi >= neep:
-        if verbose:
-            print(f"EEP ({eep}) is out of bounds for track with {neep} EEPs", file=logname or None)
-        return np.inf
 
-    # Interpolate all quantities directly from the EEP index (no searchsorted).
-    mistage   = (1 - frac) * ages[eep_lo]   + frac * ages[eep_hi]
-    mistrstar = (1 - frac) * rstars[eep_lo] + frac * rstars[eep_hi]
-    mistteff  = (1 - frac) * teffs[eep_lo]  + frac * teffs[eep_hi]
-    mistfeh   = (1 - frac) * fehs[eep_lo]   + frac * fehs[eep_hi]
+    # Bilinear interpolation over the 4 corner tracks (mass_lo/hi × feh_lo/hi).
+    # For each corner: EEP-interpolate, then bilinearly combine.
+    corner_vals = {}
+    for di in (0, 1):
+        for dj in (0, 1):
+            ages_c, rstars_c, teffs_c, fehs_c, _ = _get_track_tuple_cached(
+                mass_lo + di, feh_lo + dj, vvcritndx, alphandx
+            )
+            if eep_hi >= len(ages_c):
+                if verbose:
+                    print(f"EEP ({eep}) out of bounds for corner ({di},{dj}), neep={len(ages_c)}",
+                          file=logname or None)
+                return np.inf
+            corner_vals[(di, dj)] = {
+                'age':   (1 - eep_frac) * ages_c[eep_lo]   + eep_frac * ages_c[eep_hi],
+                'rstar': (1 - eep_frac) * rstars_c[eep_lo] + eep_frac * rstars_c[eep_hi],
+                'teff':  (1 - eep_frac) * teffs_c[eep_lo]  + eep_frac * teffs_c[eep_hi],
+                'feh':   (1 - eep_frac) * fehs_c[eep_lo]   + eep_frac * fehs_c[eep_hi],
+            }
+
+    def _bilinear(key):
+        v0 = (1 - mass_frac) * corner_vals[(0, 0)][key] + mass_frac * corner_vals[(1, 0)][key]
+        v1 = (1 - mass_frac) * corner_vals[(0, 1)][key] + mass_frac * corner_vals[(1, 1)][key]
+        return (1 - feh_frac) * v0 + feh_frac * v1
+
+    mistage   = _bilinear('age')
+    mistrstar = _bilinear('rstar')
+    mistteff  = _bilinear('teff')
+    mistfeh   = _bilinear('feh')
 
     if mistage < 0 or (not allowold and mistage > 13.82):
         if verbose:

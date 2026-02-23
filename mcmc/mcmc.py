@@ -231,7 +231,7 @@ def run_de_optimization(s):
         for _, best_fit in de(ngen):
             ngen_done += 1
             if bar is not None:
-                bar.set_postfix(lnprob=f'{-best_fit:.4f}', dlnp=f'{de._fitness.ptp():.4f}')
+                bar.set_postfix(lnprob=f'{-best_fit:.4f}', dlnp=f'{np.ptp(de._fitness):.4f}')
                 bar.update(1)
         if bar is not None:
             bar.close()
@@ -244,7 +244,7 @@ def run_de_optimization(s):
 
     best = de.minimum_location          # best parameter vector
     best_lnprob = -de.minimum_value     # DiffEvol stores -lnprob internally
-    delta_lnprob = de._fitness.ptp()    # spread of lnprob across final population
+    delta_lnprob = np.ptp(de._fitness)    # spread of lnprob across final population
     logprint(f"  DE best lnprob : {best_lnprob:.4f}")
     logprint(f"  DE Δlnprob     : {delta_lnprob:.4f}  (population spread; smaller → more converged)")
 
@@ -293,7 +293,7 @@ def _save_de_results(de):
                      plot_datapoints=True, plot_density=True)
         fig.suptitle('DE pre-optimisation population\n'
                      f'(best lnprob = {lnprobs[best_idx]:.4f}, '
-                     f'Δlnprob = {lnprobs.ptp():.4f})',
+                     f'Δlnprob = {np.ptp(lnprobs):.4f})',
                      y=1.01, fontsize=10)
         plot_file = os.path.join(outdir, 'optimized_corner.pdf')
         fig.savefig(plot_file, bbox_inches='tight')
