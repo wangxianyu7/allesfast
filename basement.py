@@ -920,8 +920,21 @@ class Basement():
             if isinstance(self.coupled_with[i], str) and (len(self.coupled_with[i])>0):
                 self.params[key] = self.params[self.coupled_with[i]]           #luser proof: automatically set the values of the params coupled to another param
                 buf['fit'][i] = 0                                              #luser proof: automatically set fit=0 for the params coupled to another param
-        
-        
+
+        #==========================================================================
+        #::: coupled_tolerance (soft-link Gaussian sigma; 0 = exact link)
+        #==========================================================================
+        if 'coupled_tolerance' in buf.dtype.names:
+            self.coupled_tolerance = np.array(
+                [float(t) if (isinstance(t, (int, float)) or
+                              (isinstance(t, str) and t.strip() != ''))
+                 else 0.0
+                 for t in buf['coupled_tolerance']]
+            )
+        else:
+            self.coupled_tolerance = np.zeros(len(self.allkeys))
+
+
         #==========================================================================
         #::: mark to be fitted params
         #==========================================================================
