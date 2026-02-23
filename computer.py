@@ -246,10 +246,10 @@ def update_params(theta):
     #::: second, deal with coupled params before updates
     #=========================================================================
     for i, key in enumerate(config.BASEMENT.allkeys):
-        if isinstance(config.BASEMENT.coupled_with[i], str) and (len(config.BASEMENT.coupled_with[i])>0):
+        if isinstance(config.BASEMENT.coupled_with[i], str) and (len(config.BASEMENT.coupled_with[i])>0) and config.BASEMENT.coupled_tolerance[i] == 0:
             params[key] = params[config.BASEMENT.coupled_with[i]]
-    
-    
+
+
     #=========================================================================
     #::: inclination, per companion
     #=========================================================================
@@ -428,10 +428,10 @@ def update_params(theta):
     #::: lastly, deal with coupled params again after updates
     #=========================================================================
     for i, key in enumerate(config.BASEMENT.allkeys):
-        if isinstance(config.BASEMENT.coupled_with[i], str) and (len(config.BASEMENT.coupled_with[i])>0):
+        if isinstance(config.BASEMENT.coupled_with[i], str) and (len(config.BASEMENT.coupled_with[i])>0) and config.BASEMENT.coupled_tolerance[i] == 0:
             params[key] = params[config.BASEMENT.coupled_with[i]]
-            
-            
+
+
     return params
 
 

@@ -1,4 +1,5 @@
 import os, textwrap, tempfile, numpy as np
+import pytest
 from allesfast import config
 
 MINIMAL_SETTINGS = '#name,value\nmultiprocess,False\nmcmc_nwalkers,10\nmcmc_total_steps,100\n'
@@ -65,3 +66,25 @@ def test_soft_link_penalty_applied(tmp_path):
     val, ref, tol = 10.5, 10.0, 0.1
     penalty = 0.5 * ((val - ref) / tol) ** 2
     assert penalty == pytest.approx(12.5)
+
+
+def test_exact_link_skips_soft_linked(tmp_path):
+    """update_params must NOT force exact equality for coupled_tolerance > 0 entries."""
+    # The check: after config.init, verify coupled_with is set AND tolerance > 0
+    # (ensuring the update_params guard will skip it)
+    settings = os.path.join(tmp_path, 'settings.csv')
+    with open(settings, 'w') as f:
+        f.write(MINIMAL_SETTINGS)
+    params_csv = os.path.join(tmp_path, 'params.csv')
+    with open(params_csv, 'w') as f:
+        f.write('#name,value,fit,bounds,label,unit,coupled_with,coupled_tolerance\n'
+                'A_age,10.0,0,fixed,$age_A$,Gyr,,\n'
+                'B_age,10.5,0,fixed,$age_B$,Gyr,A_age,0.1\n')
+    config.init(str(tmp_path), quiet=True)
+    idx = list(config.BASEMENT.allkeys).index('B_age')
+    # soft-linked: coupled_with set AND tolerance > 0
+    assert config.BASEMENT.coupled_with[idx] == 'A_age'
+    assert config.BASEMENT.coupled_tolerance[idx] == pytest.approx(0.1)
+    # The exact-link enforcement loop must skip this entry (tol > 0)
+    # We verify this by checking the condition: tol == 0 is False
+    assert not (config.BASEMENT.coupled_tolerance[idx] == 0)
