@@ -73,7 +73,7 @@ def mist_chi2(star: StellarInputs, config: Optional[Dict[str, Any]] = None,
 
 
 def sed_chi2(
-    star,
+    star: 'StellarInputs | list[StellarInputs]',
     sed_file: str,
     sed_data=None,
     config: Optional[Dict[str, Any]] = None,
