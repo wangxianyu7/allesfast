@@ -44,11 +44,9 @@ def test_coupled_tolerance_defaults_zero(tmp_path):
     assert all(float(t) == 0.0 for t in config.BASEMENT.coupled_tolerance)
 
 def test_soft_link_penalty_applied(tmp_path):
-    """coupled_tolerance > 0 on B_age is stored and leads to a penalty term.
-    Verifies that the stored tolerance is > 0 (enabling the penalty loop in lnprob).
-    The actual penalty math is tested implicitly via the end-to-end smoke test.
+    """Verifies that coupled_tolerance > 0 is stored and the penalty formula is correct.
+    Note: the penalty loop in calculate_external_priors is tested end-to-end in Task 10.
     """
-    import pytest
     settings = os.path.join(tmp_path, 'settings.csv')
     with open(settings, 'w') as f:
         f.write(MINIMAL_SETTINGS)
