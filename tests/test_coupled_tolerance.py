@@ -21,6 +21,11 @@ def test_coupled_tolerance_parsed(tmp_path):
     idx = list(config.BASEMENT.allkeys).index('B_age')
     assert hasattr(config.BASEMENT, 'coupled_tolerance')
     assert float(config.BASEMENT.coupled_tolerance[idx]) == 0.1
+    # Verify rows that leave coupled_tolerance blank default to 0.0
+    idx_a_feh = list(config.BASEMENT.allkeys).index('A_feh')
+    idx_b_feh = list(config.BASEMENT.allkeys).index('B_feh')
+    assert float(config.BASEMENT.coupled_tolerance[idx_a_feh]) == 0.0
+    assert float(config.BASEMENT.coupled_tolerance[idx_b_feh]) == 0.0
 
 def test_coupled_tolerance_defaults_zero(tmp_path):
     """params.csv without coupled_tolerance column → array of zeros."""

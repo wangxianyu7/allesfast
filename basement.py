@@ -925,11 +925,8 @@ class Basement():
         #::: coupled_tolerance (soft-link Gaussian sigma; 0 = exact link)
         #==========================================================================
         if 'coupled_tolerance' in buf.dtype.names:
-            self.coupled_tolerance = np.array(
-                [float(t) if (isinstance(t, (int, float)) or
-                              (isinstance(t, str) and t.strip() != ''))
-                 else 0.0
-                 for t in buf['coupled_tolerance']]
+            self.coupled_tolerance = np.nan_to_num(
+                buf['coupled_tolerance'].astype(float), nan=0.0
             )
         else:
             self.coupled_tolerance = np.zeros(len(self.allkeys))
