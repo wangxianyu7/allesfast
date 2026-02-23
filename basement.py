@@ -933,6 +933,11 @@ class Basement():
 
 
         #==========================================================================
+        #::: detect number of stars from presence of B_* parameters
+        #==========================================================================
+        self.nstars = 2 if any(k.startswith('B_') for k in self.allkeys) else 1
+
+        #==========================================================================
         #::: mark to be fitted params
         #==========================================================================
         self.ind_fit = (buf['fit']==1)                  #len(all rows in params.csv)
@@ -1426,6 +1431,6 @@ class Basement():
             if not os.path.isabs(_sed_path):
                 _sed_path = os.path.join(self.datadir, _sed_path)
             if os.path.exists(_sed_path):
-                self.sed_data = read_sed_file(_sed_path, nstars=1)
+                self.sed_data = read_sed_file(_sed_path, nstars=self.nstars)
 
 

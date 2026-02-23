@@ -86,3 +86,28 @@ def test_exact_link_skips_soft_linked(tmp_path):
     # The exact-link enforcement loop must skip this entry (tol > 0)
     # We verify this by checking the condition: tol == 0 is False
     assert not (config.BASEMENT.coupled_tolerance[idx] == 0)
+
+
+def test_basement_nstars_detection(tmp_path):
+    """nstars=2 when any B_* param is in allkeys."""
+    settings = os.path.join(tmp_path, 'settings.csv')
+    with open(settings, 'w') as f:
+        f.write(MINIMAL_SETTINGS)
+    params_csv = os.path.join(tmp_path, 'params.csv')
+    with open(params_csv, 'w') as f:
+        f.write('#name,value,fit,bounds,label,unit,coupled_with,coupled_tolerance\n'
+                'B_rstar,0.7,1,uniform 0 2,$R_B$,,,\n'
+                'A_rstar,0.9,1,uniform 0 2,$R_A$,,,\n')
+    config.init(str(tmp_path), quiet=True)
+    assert config.BASEMENT.nstars == 2
+
+def test_basement_nstars_default_one(tmp_path):
+    """nstars=1 when no B_* params present."""
+    settings = os.path.join(tmp_path, 'settings.csv')
+    with open(settings, 'w') as f:
+        f.write(MINIMAL_SETTINGS)
+    params_csv = os.path.join(tmp_path, 'params.csv')
+    with open(params_csv, 'w') as f:
+        f.write('#name,value,fit,bounds,label,unit\nA_rstar,0.9,1,uniform 0 2,$R_A$,\n')
+    config.init(str(tmp_path), quiet=True)
+    assert config.BASEMENT.nstars == 1
