@@ -301,6 +301,23 @@ def test_get_mistage():
 
 
 # ---------------------------------------------------------------------------
+# 4. sed_chi2 two-star binary test
+# ---------------------------------------------------------------------------
+def test_sed_chi2_two_stars():
+    """sed_chi2 accepts list of two StellarInputs for binary SED."""
+    from allesfast.star.mist_sed import sed_chi2, StellarInputs
+    SED = '/Users/wangxianyu/Program/Github/allesfast/examples/WASP-77/1129033.sed'
+    if not os.path.exists(SED):
+        pytest.skip(f"WASP-77 SED file not found: {SED}")
+    star_A = StellarInputs(teff=5500, rstar=0.9471, mstar=0.9031,
+                           feh=0.1477, av=0.0575, distance=104.94)
+    star_B = StellarInputs(teff=4622, rstar=0.7004, mstar=0.7322,
+                           feh=0.1477, av=0.0575, distance=104.94)
+    chi2 = sed_chi2([star_A, star_B], sed_file=SED)
+    assert np.isfinite(chi2), f"Expected finite chi2, got {chi2}"
+
+
+# ---------------------------------------------------------------------------
 # main
 # ---------------------------------------------------------------------------
 def main():

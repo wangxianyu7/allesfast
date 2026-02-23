@@ -73,37 +73,50 @@ def mist_chi2(star: StellarInputs, config: Optional[Dict[str, Any]] = None,
 
 
 def sed_chi2(
-    star: StellarInputs,
+    star,
     sed_file: str,
     sed_data=None,
     config: Optional[Dict[str, Any]] = None,
 ) -> float:
     """
-    Compute SED chi2 for one star.
+    Compute SED chi2 for one or more stars.
 
+    Parameters
+    ----------
+    star : StellarInputs or list[StellarInputs]
+        A single star or a list of stars (e.g. a binary system).
     sed_data : pre-loaded SED data dict from read_sed_file (e.g. stored in
                BASEMENT.sed_data at init time).  If None, the file is read here.
     """
     cfg = config or {}
-    if any(v is None for v in [star.teff, star.rstar, star.feh, star.av, star.distance, star.mstar]):
-        return np.inf
+    stars = [star] if isinstance(star, StellarInputs) else list(star)
+    nstars = len(stars)
+
+    required = ['teff', 'rstar', 'feh', 'av', 'distance', 'mstar']
+    for s in stars:
+        if any(getattr(s, k, None) is None for k in required):
+            return np.inf
     if not sed_file or not os.path.exists(sed_file):
         return np.inf
 
     try:
-        logg = _derive_logg(float(star.mstar), float(star.rstar))
-        lstar = _derive_lstar(float(star.teff), float(star.rstar))
+        teff_arr     = np.array([float(s.teff)     for s in stars])
+        logg_arr     = np.array([_derive_logg(float(s.mstar), float(s.rstar)) for s in stars])
+        feh_arr      = np.array([float(s.feh)      for s in stars])
+        av_arr       = np.array([float(s.av)       for s in stars])
+        distance_arr = np.array([float(s.distance) for s in stars])
+        lstar_arr    = np.array([_derive_lstar(float(s.teff), float(s.rstar)) for s in stars])
 
         if sed_data is None:
-            sed_data = read_sed_file(os.path.abspath(sed_file), nstars=1)
+            sed_data = read_sed_file(os.path.abspath(sed_file), nstars=nstars)
 
         chi2, _, _, _ = mistmultised(
-            np.array([float(star.teff)]),
-            np.array([logg]),
-            np.array([float(star.feh)]),
-            np.array([float(star.av)]),
-            np.array([float(star.distance)]),
-            np.array([lstar]),
+            teff_arr,
+            logg_arr,
+            feh_arr,
+            av_arr,
+            distance_arr,
+            lstar_arr,
             float(cfg.get("errscale", 1.0)),
             sed_file,
             sed_data=sed_data,
