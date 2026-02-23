@@ -1,3 +1,4 @@
+multiprocess,False
 companions_phot,b
 companions_rv,b
 inst_phot,TESS120 TESS600
