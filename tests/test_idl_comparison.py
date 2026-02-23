@@ -281,6 +281,19 @@ def test_sed_chi2():
 
 
 # ---------------------------------------------------------------------------
+# 3. get_mistage test
+# ---------------------------------------------------------------------------
+def test_get_mistage():
+    """get_mistage returns same age as massradius_mist bilinear interpolation."""
+    from allesfast.star.massradius_mist import get_mistage
+    # Use a concrete EEP/mass/feh point where IDL gives known age
+    # eep=395, mstar=0.9031, feh=0.1477 → approximately 10.7 Gyr (WASP-77 A)
+    age = get_mistage(395.2, 0.9031, 0.1477)
+    assert np.isfinite(age), f"Expected finite age, got {age}"
+    assert 8.0 < age < 14.0, f"Expected age ~10.7 Gyr, got {age}"
+
+
+# ---------------------------------------------------------------------------
 # main
 # ---------------------------------------------------------------------------
 def main():

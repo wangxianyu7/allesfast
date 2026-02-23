@@ -1218,6 +1218,8 @@ def calculate_external_priors(params):
                 'alpha': config.BASEMENT.settings.get('mist_alpha', 0.0),
                 'allowold': config.BASEMENT.settings.get('mist_allowold', False),
             },
+            params=params,
+            label='A',
         )
         if np.isfinite(chi2):
             lnp += -0.5 * chi2

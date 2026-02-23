@@ -71,6 +71,47 @@ def _feh_bracket(feh):
     return lo, frac
 
 
+def get_mistage(eep: float, mstar: float, feh: float,
+                vvcrit: float = None, alpha: float = None) -> float:
+    """
+    Return the derived age (Gyr) at the given EEP, mstar, feh.
+    Uses the same bilinear (mass x feh) + linear EEP interpolation as
+    massradius_mist(). Returns np.inf if inputs are out of range.
+    """
+    if not (ALLOWED_MASS.min() <= mstar <= ALLOWED_MASS.max()):
+        return np.inf
+    if not (ALLOWED_INITFEH.min() <= feh <= ALLOWED_INITFEH.max()):
+        return np.inf
+
+    mass_lo, mass_frac = _mass_bracket(mstar)
+    feh_lo,  feh_frac  = _feh_bracket(feh)
+    vvcritndx = 0 if vvcrit is None else _vvcrit_index(vvcrit)
+    alphandx  = 0 if alpha  is None else _alpha_index(alpha)
+
+    eep_lo   = int(np.floor(eep)) - 1
+    eep_hi   = eep_lo + 1
+    eep_frac = eep - np.floor(eep)
+
+    if eep_lo < 0:
+        return np.inf
+
+    corner_ages = {}
+    for di in (0, 1):
+        for dj in (0, 1):
+            ages_c, _, _, _, _ = _get_track_tuple_cached(
+                mass_lo + di, feh_lo + dj, vvcritndx, alphandx
+            )
+            if eep_hi >= len(ages_c):
+                return np.inf
+            corner_ages[(di, dj)] = (
+                (1 - eep_frac) * ages_c[eep_lo] + eep_frac * ages_c[eep_hi]
+            )
+
+    v0 = (1 - mass_frac) * corner_ages[(0, 0)] + mass_frac * corner_ages[(1, 0)]
+    v1 = (1 - mass_frac) * corner_ages[(0, 1)] + mass_frac * corner_ages[(1, 1)]
+    return float((1 - feh_frac) * v0 + feh_frac * v1)
+
+
 def _vvcrit_index(vvcrit):
     matches = np.where(np.isclose(ALLOWED_VVCRIT, vvcrit))[0]
     if len(matches) == 0:
