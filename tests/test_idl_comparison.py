@@ -24,6 +24,7 @@ import os
 import subprocess
 import sys
 import numpy as np
+import pytest
 
 # ---------------------------------------------------------------------------
 # Paths
@@ -64,6 +65,12 @@ IDL_REFERENCE = [
      "age": 0.133462515334, "rstar": 0.458122257388,
      "teff": 4065.755231167308, "feh_act": -0.472323782043},
 ]
+
+
+# pytest fixture so test_massradius_mist can be discovered by pytest
+@pytest.fixture
+def ref_rows():
+    return IDL_REFERENCE
 
 
 # ---------------------------------------------------------------------------
