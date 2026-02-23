@@ -1191,13 +1191,13 @@ def calculate_external_priors(params):
             if val is not None and ref is not None and np.isfinite(float(val)) and np.isfinite(float(ref)):
                 lnp -= 0.5 * ((float(val) - float(ref)) / tol) ** 2
 
-    #::: optional stellar-model priors (single-star for now)
+    #::: build stellar inputs — star A (always)
     _distance = params.get('A_distance', None)
     if _distance is None:
         _parallax = params.get('A_parallax', None)
         if _parallax is not None and _parallax > 0:
             _distance = 1000.0 / _parallax   # mas → pc
-    star = StellarInputs(
+    star_A = StellarInputs(
         teff=params.get('A_teff', None),
         logg=params.get('A_logg', None),
         feh=params.get('A_feh', None),
@@ -1208,10 +1208,24 @@ def calculate_external_priors(params):
         av=params.get('A_av', None),
         distance=_distance,
     )
+    stars = [star_A]
+
+    #::: build star B if B_* params are present (binary system)
+    if params.get('B_rstar') is not None:
+        star_B = StellarInputs(
+            teff=params.get('B_teff', None),
+            rstar=params.get('B_rstar', None),
+            mstar=params.get('B_mstar', None),
+            eep=params.get('B_eep', None),
+            feh=params.get('B_feh', None),    # coupled → A_feh via coupled_with
+            av=params.get('A_av', None),
+            distance=_distance,
+        )
+        stars.append(star_B)
 
     if config.BASEMENT.settings.get('use_mist_prior', False):
         chi2 = mist_chi2(
-            star,
+            stars,
             config={
                 'mist_root': config.BASEMENT.settings.get('mist_root', None),
                 'vvcrit': config.BASEMENT.settings.get('mist_vvcrit', 0.0),
@@ -1219,7 +1233,6 @@ def calculate_external_priors(params):
                 'allowold': config.BASEMENT.settings.get('mist_allowold', False),
             },
             params=params,
-            label='A',
         )
         if np.isfinite(chi2):
             lnp += -0.5 * chi2
@@ -1231,7 +1244,7 @@ def calculate_external_priors(params):
         if sed_file is not None and not os.path.isabs(sed_file):
             sed_file = os.path.join(config.BASEMENT.datadir, sed_file)
         chi2 = sed_chi2(
-            star,
+            stars,
             sed_file=sed_file,
             sed_data=config.BASEMENT.sed_data,
             config={'errscale': config.BASEMENT.settings.get('sed_errscale', 1.0)},
@@ -1243,7 +1256,7 @@ def calculate_external_priors(params):
 
     if config.BASEMENT.settings.get('use_torres_prior', False):
         try:
-            out = torres_constraints(star)
+            out = torres_constraints(star_A)
             if np.isfinite(out.chi2):
                 lnp += -0.5 * out.chi2
             else:

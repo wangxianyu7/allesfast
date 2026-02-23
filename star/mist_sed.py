@@ -26,50 +26,57 @@ def _derive_lstar(teff: float, rstar: float) -> float:
     return float((rstar**2) * (teff / 5772.0) ** 4)
 
 
-def mist_chi2(star: StellarInputs, config: Optional[Dict[str, Any]] = None,
-              params: Optional[dict] = None, label: str = 'A') -> float:
+def mist_chi2(star: 'StellarInputs | list[StellarInputs]',
+              config: Optional[Dict[str, Any]] = None,
+              params: Optional[dict] = None) -> float:
     """
-    Compute MIST penalty chi2 for one star.
+    Compute MIST penalty chi2 for one or more stars.
 
     EEP (star.eep, 1-808, continuous) is the primary MIST parameter.
     Age is derived from the evolutionary track and is NOT a free parameter.
 
     Parameters
     ----------
-    star : StellarInputs
-        Stellar inputs for this star.
+    star : StellarInputs or list[StellarInputs]
+        A single star or a list of stars (e.g. a binary system).
     config : dict, optional
         Configuration options (vvcrit, alpha, allowold, etc.).
     params : dict, optional
-        If provided, the derived age is stored as params[f'{label}_age'].
-    label : str, optional
-        Star label ('A', 'B', 'C', 'D') used to key params. Default 'A'.
+        If provided, the derived age for each star is stored as
+        params[f'{label}_age'] where label is 'A', 'B', 'C', 'D'.
     """
     cfg = config or {}
-    if any(v is None for v in [star.eep, star.mstar, star.feh, star.teff, star.rstar]):
-        return np.inf
-    try:
-        chi2 = massradius_mist(
-            eep=float(star.eep),
-            mstar=float(star.mstar),
-            feh=float(star.feh),
-            teff=float(star.teff),
-            rstar=float(star.rstar),
-            vvcrit=cfg.get('vvcrit', None),
-            alpha=cfg.get('alpha', None),
-            allowold=cfg.get('allowold', False),
-        )
-        # store derived age so coupled_tolerance can act on it
-        if params is not None:
-            age = get_mistage(
-                float(star.eep), float(star.mstar), float(star.feh),
+    stars = [star] if isinstance(star, StellarInputs) else list(star)
+    labels = ['A', 'B', 'C', 'D']
+    total = 0.0
+    for idx, s in enumerate(stars):
+        if any(v is None for v in [s.eep, s.mstar, s.feh, s.teff, s.rstar]):
+            return np.inf
+        try:
+            chi2 = massradius_mist(
+                eep=float(s.eep),
+                mstar=float(s.mstar),
+                feh=float(s.feh),
+                teff=float(s.teff),
+                rstar=float(s.rstar),
                 vvcrit=cfg.get('vvcrit', None),
                 alpha=cfg.get('alpha', None),
+                allowold=cfg.get('allowold', False),
             )
-            params[f'{label}_age'] = age
-        return chi2
-    except Exception:
-        return np.inf
+            if not np.isfinite(chi2):
+                return np.inf
+            total += chi2
+            # store derived age so coupled_tolerance can act on it
+            if params is not None and idx < len(labels):
+                age = get_mistage(
+                    float(s.eep), float(s.mstar), float(s.feh),
+                    vvcrit=cfg.get('vvcrit', None),
+                    alpha=cfg.get('alpha', None),
+                )
+                params[f'{labels[idx]}_age'] = age
+        except Exception:
+            return np.inf
+    return total
 
 
 def sed_chi2(
