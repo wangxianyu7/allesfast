@@ -37,9 +37,9 @@ A_vsini,10,1,uniform 0 20,$v \sin i_\star$,km/s
 A_xi,2,1,normal 2 1,$A_xi$,$ \mathrm{km/s}$
 A_zeta,4,1,normal 4 1,$A_zeta$,$ \mathrm{km/s}$
 
-baseline_quad_rv_CORALIE,0,1,uniform -10 10,quad_CORALIE,
-baseline_slope_rv_CORALIE,0,1,uniform -10 10,slope_CORALIE,
-baseline_offset_rv_CORALIE,1.1,1,uniform -10 10,offset_CORALIE,
+#baseline_quad_rv_CORALIE,0,1,uniform -10 10,quad_CORALIE,
+#baseline_slope_rv_CORALIE,0,1,uniform -10 10,slope_CORALIE,
+#baseline_offset_rv_CORALIE,1.1,1,uniform -10 10,offset_CORALIE,
 
 #stellar parameters (migrated from params_star.csv),,,,,
 A_rstar,1.02,1,uniform 0.1 20,$R_\star$,$R_\odot$

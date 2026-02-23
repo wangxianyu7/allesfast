@@ -21,7 +21,7 @@ inst_for_b_epoch,all
 # MCMC settings,
 ###############################################################################,
 mcmc_nwalkers,56  # 2 x 28 free params
-mcmc_total_steps,10000
+mcmc_total_steps,20000
 mcmc_thin_by,10
 mcmc_ntemps,8
 mcmc_maxgr,1.01
@@ -65,3 +65,5 @@ b_flux_weighted_Keck,True
 #t_exp_n_int_Keck,10
 #t_exp_Keck,0.0130910003
 mcmc_sampler,demcpt
+cornerplot,False
+de_ngen,10000

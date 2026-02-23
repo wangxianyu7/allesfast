@@ -144,7 +144,10 @@ def plot_MCMC_corner(sampler):
 
 def plot_MCMC_corner(sampler):
     samples = sampler.get_chain(flat=True, discard=int(1.*config.BASEMENT.settings['mcmc_burn_steps']/config.BASEMENT.settings['mcmc_thin_by']))
-    
+    # Last 10000 samples for plotting, to speed up the corner plot (otherwise it can be very slow with more samples)
+    if samples.shape[0]>10000:
+        samples = samples[np.random.randint(samples.shape[0], size=10000),:]
+
     params_median, params_ll, params_ul = get_params_from_samples(samples)
     params_median2, params_ll2, params_ul2 = params_median.copy(), params_ll.copy(), params_ul.copy()
     fittruths2 = config.BASEMENT.fittruths.copy()

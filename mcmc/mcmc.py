@@ -149,9 +149,164 @@ def get_burnndx(log_prob):
 
 
 ###########################################################################
+#::: DE pre-optimization
+###########################################################################
+def run_de_optimization(s):
+    """Run Differential Evolution to find a good starting point for MCMC.
+
+    Controlled by settings keys:
+      de_ngen  : number of DE generations (default 0 = skip)
+      de_npop  : population size (default max(5*ndim, mcmc_nwalkers))
+
+    Returns (best_theta, population) array shaped (npop, ndim), or None.
+    """
+    try:
+        from pytransit.utils.de import DiffEvol
+    except ImportError:
+        logprint("WARNING: pytransit not found – skipping DE pre-optimization.")
+        return None
+
+    ngen = int(s.get('de_ngen', 0))
+    if ngen <= 0:
+        return None
+
+    # --- resume: skip DE if results already exist ---
+    pop_file  = os.path.join(config.BASEMENT.outdir, 'optimized_population.csv')
+    best_file = os.path.join(config.BASEMENT.outdir, 'optimized_best.csv')
+    if os.path.exists(pop_file) and os.path.exists(best_file):
+        import pandas as pd
+        logprint("\nFound existing DE results – skipping DE optimisation.")
+        logprint(f"  Loading: {pop_file}")
+        df  = pd.read_csv(pop_file)
+        pop = df[config.BASEMENT.fitkeys].values
+        best_row = pd.read_csv(best_file).set_index('parameter')['value']
+        best = best_row[config.BASEMENT.fitkeys].values
+        return best, pop
+
+    ndim = config.BASEMENT.ndim
+    npop = int(s.get('de_npop', max(5 * ndim, s['mcmc_nwalkers'])))
+
+    logprint(f"\nRunning DE pre-optimization ({npop} population, {ngen} generations)...")
+    logprint('--------------------------')
+
+    start_best_lnprob = mcmc_lnprob(config.BASEMENT.theta_0)
+    logprint(f"  Starting lnprob: {start_best_lnprob:.4f}")
+    # Build [npar, 2] bounds array for DiffEvol
+    de_bounds = []
+    for b in config.BASEMENT.bounds:
+        if b[0] == 'uniform':
+            de_bounds.append([b[1], b[2]])
+        elif b[0] == 'normal':
+            de_bounds.append([b[1] - 5. * b[2], b[1] + 5. * b[2]])
+        elif b[0] == 'trunc_normal':
+            de_bounds.append([b[1], b[2]])
+        else:
+            raise ValueError(f'Unknown bound type for DE: {b[0]}')
+    de_bounds = np.array(de_bounds)
+
+    # --- multiprocessing pool (reuse settings from MCMC) ---
+    pool = None
+    if s.get('multiprocess', False):
+        cores = s.get('multiprocess_cores', 1)
+        nworkers = (multiprocessing.cpu_count()
+                    if str(cores).lower() == 'all' else int(cores))
+        logprint(f"  Using {nworkers} CPUs for DE.")
+        pool = Pool(processes=nworkers)
+
+    try:
+        de_dlnprob = float(s.get('de_dlnprob', 0.01))   # early-stop threshold
+        de = DiffEvol(mcmc_lnprob, de_bounds, npop=npop, maximize=True,
+                      pool=pool, min_ptp=de_dlnprob)
+        # Seed member 0 with theta_0 so the known starting point is never lost
+        de._population[0] = np.clip(config.BASEMENT.theta_0,
+                                    de_bounds[:, 0], de_bounds[:, 1])
+
+        # --- iterate generation-by-generation so tqdm can track progress ---
+        show_progress = s.get('print_progress', True)
+        bar = None
+        if show_progress:
+            from tqdm import tqdm
+            bar = tqdm(total=ngen, desc='DE', unit='gen')
+        ngen_done = 0
+        for _, best_fit in de(ngen):
+            ngen_done += 1
+            if bar is not None:
+                bar.set_postfix(lnprob=f'{-best_fit:.4f}', dlnp=f'{de._fitness.ptp():.4f}')
+                bar.update(1)
+        if bar is not None:
+            bar.close()
+        if ngen_done < ngen:
+            logprint(f"  DE converged early at generation {ngen_done}/{ngen} (Δlnprob < {de_dlnprob})")
+    finally:
+        if pool is not None:
+            pool.close()
+            pool.join()
+
+    best = de.minimum_location          # best parameter vector
+    best_lnprob = -de.minimum_value     # DiffEvol stores -lnprob internally
+    delta_lnprob = de._fitness.ptp()    # spread of lnprob across final population
+    logprint(f"  DE best lnprob : {best_lnprob:.4f}")
+    logprint(f"  DE Δlnprob     : {delta_lnprob:.4f}  (population spread; smaller → more converged)")
+
+    _save_de_results(de)
+
+    return best, de.population.copy()
+
+
+def _save_de_results(de):
+    """Save DE population to CSV and generate a corner plot."""
+    import pandas as pd
+    import matplotlib.pyplot as plt
+    from corner import corner
+    import seaborn as sns
+    sns.set(context='paper', style='ticks', palette='deep',
+            font='sans-serif', font_scale=1.5, color_codes=True)
+    sns.set_style({'xtick.direction': 'in', 'ytick.direction': 'in'})
+
+    outdir   = config.BASEMENT.outdir
+    fitkeys  = config.BASEMENT.fitkeys
+    pop      = de.population.copy()          # (npop, ndim)
+    lnprobs  = -de._fitness.copy()           # stored as -lnprob
+
+    # --- population CSV  (easy to reload: pd.read_csv) ---
+    df = pd.DataFrame(pop, columns=fitkeys)
+    df['lnprob'] = lnprobs
+    pop_file = os.path.join(outdir, 'optimized_population.csv')
+    df.to_csv(pop_file, index=False)
+    logprint(f"  Saved: {pop_file}")
+
+    # --- best-params CSV ---
+    best_idx  = int(np.argmax(lnprobs))
+    best_df   = pd.DataFrame({'parameter': fitkeys,
+                               'value':     pop[best_idx]})
+    best_file = os.path.join(outdir, 'optimized_best.csv')
+    best_df.to_csv(best_file, index=False)
+    logprint(f"  Saved: {best_file}")
+
+    # --- corner plot of the final population, weighted by lnprob ---
+    try:
+        weights = np.exp(lnprobs - lnprobs.max())   # normalised, numerically safe
+        weights /= weights.sum()
+        fig = corner(pop, labels=list(fitkeys), weights=weights,
+                     show_titles=True, title_fmt='.4f',
+                     quantiles=[0.16, 0.5, 0.84],
+                     plot_datapoints=True, plot_density=True)
+        fig.suptitle('DE pre-optimisation population\n'
+                     f'(best lnprob = {lnprobs[best_idx]:.4f}, '
+                     f'Δlnprob = {lnprobs.ptp():.4f})',
+                     y=1.01, fontsize=10)
+        plot_file = os.path.join(outdir, 'optimized_corner.pdf')
+        fig.savefig(plot_file, bbox_inches='tight')
+        plt.close(fig)
+        logprint(f"  Saved: {plot_file}")
+    except Exception as e:
+        logprint(f"  WARNING: DE corner plot failed – {e}")
+
+
+###########################################################################
 #::: emcee backend
 ###########################################################################
-def _run_emcee(s):
+def _run_emcee(s, p0_de=None):
     """Run emcee EnsembleSampler. Returns the sampler."""
     outdir = config.BASEMENT.outdir
     save_h5 = os.path.join(outdir, 'mcmc_save.h5')
@@ -164,9 +319,22 @@ def _run_emcee(s):
             p0 = backend.get_chain()[-1, :, :]
             already_completed_steps = backend.get_chain().shape[0] * s['mcmc_thin_by']
         else:
-            p0 = (config.BASEMENT.theta_0
-                  + config.BASEMENT.init_err
-                  * np.random.randn(s['mcmc_nwalkers'], config.BASEMENT.ndim))
+            nwalkers = s['mcmc_nwalkers']
+            if p0_de is not None:
+                # Seed walkers from the DE population
+                npop = p0_de.shape[0]
+                if npop >= nwalkers:
+                    idx = np.random.choice(npop, nwalkers, replace=False)
+                    p0 = p0_de[idx, :]
+                else:
+                    repeats = (nwalkers // npop) + 1
+                    p0 = np.tile(p0_de, (repeats, 1))[:nwalkers, :]
+                # Add small perturbation so walkers are not identical
+                p0 = p0 + config.BASEMENT.init_err * np.random.randn(nwalkers, config.BASEMENT.ndim)
+            else:
+                p0 = (config.BASEMENT.theta_0
+                      + config.BASEMENT.init_err
+                      * np.random.randn(nwalkers, config.BASEMENT.ndim))
             already_completed_steps = 0
 
         for i, b in enumerate(config.BASEMENT.bounds):
@@ -218,7 +386,7 @@ def _run_emcee(s):
 ###########################################################################
 #::: DEMCPT backend
 ###########################################################################
-def _run_demcpt(s):
+def _run_demcpt(s, p0_de=None):
     """Run DEMCPTSampler. Returns the sampler."""
     outdir   = config.BASEMENT.outdir
     nchains  = s['mcmc_nwalkers']
@@ -247,12 +415,13 @@ def _run_demcpt(s):
             save_every=max(nsteps // 10, 1), save_file=save_file,
         )
     else:
+        p0_start = p0_de if p0_de is not None else config.BASEMENT.theta_0
         sampler   = DEMCPTSampler(
             mcmc_lnprob, ndim=config.BASEMENT.ndim,
             nchains=nchains, ntemps=ntemps, maxgr=maxgr, mintz=mintz,
         )
         converged = sampler.run(
-            p0=config.BASEMENT.theta_0, nsteps=nsteps, nthin=nthin,
+            p0=p0_start, nsteps=nsteps, nthin=nthin,
             scale=config.BASEMENT.init_err,
             progress=s.get('print_progress', True), nworkers=nworkers,
             save_every=max(nsteps // 10, 1), save_file=save_file,
@@ -294,14 +463,20 @@ def mcmc_fit(datadir, method=None):
     if method is None:
         method = s.get('mcmc_sampler', 'emcee')
 
-    logprint(f"\nRunning MCMC ({method})...")
-    logprint('--------------------------')
     t0 = timer()
 
+    de_result = run_de_optimization(s)
+
+    logprint(f"\nRunning MCMC ({method})...")
+    logprint('--------------------------')
+
+    de_best = de_result[0] if de_result is not None else None
+    de_pop  = de_result[1] if de_result is not None else None
+
     if method == 'emcee':
-        sampler = _run_emcee(s)
+        sampler = _run_emcee(s, p0_de=de_pop)
     elif method == 'demcpt':
-        sampler = _run_demcpt(s)
+        sampler = _run_demcpt(s, p0_de=de_best)
     else:
         raise ValueError(
             f"Unknown mcmc_sampler: {method!r}. Choose 'emcee' or 'demcpt'."
