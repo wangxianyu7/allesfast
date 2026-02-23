@@ -91,7 +91,8 @@ from pytransit import RoadRunnerModel
 # set_data() is expensive; calling it once avoids repeating it on every likelihood eval.
 _tm_models = {}   # inst -> RoadRunnerModel with set_data already called
 
-import radvel ### Xian-Yu added, 2014-01-14
+from radvel.kepler import rv_drive
+from radvel.orbit import timetrans_to_timeperi
 from .rm_models import hirano2011_rm
 
 # Physical constants for computing thermal Gaussian broadening β_thermal.
@@ -1082,22 +1083,15 @@ def rv_fct(params, inst, companion, xx=None, settings=None):
     
     if (params[companion+'_K'] is not None) and (params[companion+'_K'] > 0):
         # print(inst,'RV com')
-        per1 = params[companion+'_period']
-        tc1  = params[companion+'_epoch']
+        per1    = params[companion+'_period']
+        tc1     = params[companion+'_epoch']
         secosw1 = params[companion+'_f_c']
         sesinw1 = params[companion+'_f_s']
-        logk1 = np.log(params[companion+'_K']*1000)
-
+        e = np.sqrt(secosw1**2 + sesinw1**2)
+        w = np.arctan2(sesinw1, secosw1)   # radians; arctan2 handles e==0 cleanly
 
         # calculate the duration of the transit
         try:
-            e = np.sqrt(secosw1**2 + sesinw1**2)
-            if e == 0:
-                w = 0
-            elif secosw1 == 0:
-                w = np.pi/2
-            else:
-                w = np.arctan2(sesinw1,secosw1)
             R_star_over_a = params[companion+'_rsuma'] / (1. + params[companion+'_rr'])
             eccentricity_correction_T_tra = ( np.sqrt(1. - e**2) / ( 1. + e*np.sin(w) ) )
             T_tra_tot = params[companion+'_period'] / np.pi * 24. \
@@ -1109,15 +1103,9 @@ def rv_fct(params, inst, companion, xx=None, settings=None):
             # if the calculation of the duration of the transit fails, we set it to 0.5 days
             T_tra_tot = 0.5
 
-        radvelparams = radvel.Parameters(1,basis='per tc secosw sesinw logk')
-        radvelparams['per1'] = radvel.Parameter(value=per1)
-        radvelparams['tc1'] = radvel.Parameter(value=tc1)
-        radvelparams['secosw1'] = radvel.Parameter(value=secosw1)
-        radvelparams['sesinw1'] = radvel.Parameter(value=sesinw1)
-        radvelparams['logk1'] = radvel.Parameter(value=logk1) 
-
-        mod = radvel.RVModel(radvelparams)
-        model_rv1 = mod(xx)/1e3
+        K1 = params[companion+'_K'] * 1e3   # km/s → m/s
+        tp1 = timetrans_to_timeperi(tc1, per1, e, w)
+        model_rv1 = rv_drive(xx, np.array([per1, tp1, e, w, K1])) / 1e3
         model_rv2 = np.zeros_like(model_rv1)
 
         def transit_mask(time, period, duration, T0):
