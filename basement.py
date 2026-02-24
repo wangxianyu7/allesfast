@@ -340,6 +340,11 @@ class Basement():
         else:
             self.settings['use_sed_prior'] = False
 
+        if 'use_ttv_prior' in self.settings:
+            self.settings['use_ttv_prior'] = set_bool(self.settings['use_ttv_prior'])
+        else:
+            self.settings['use_ttv_prior'] = False
+
         if ('sed_file' not in self.settings) or (str(self.settings['sed_file']).lower() == 'none') or (len(str(self.settings['sed_file'])) == 0):
             self.settings['sed_file'] = None
             
