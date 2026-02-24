@@ -1,4 +1,11 @@
 #name,value,fit,bounds,label,unit,coupled_with,coupled_tolerance
+#gamma (systemic velocity offset per instrument)
+baseline_offset_rv_CORALIE,0.0,1,uniform -20.0 20.0,$\gamma_{\rm CORALIE}$,km/s,,
+baseline_offset_rv_HARPS,0.0,1,uniform -20.0 20.0,$\gamma_{\rm HARPS}$,km/s,,
+baseline_offset_rv_HARPSjiang0,0.0,1,uniform -20.0 20.0,$\gamma_{\rm Hj0}$,km/s,,
+baseline_offset_rv_HARPSjiang1,0.0,1,uniform -20.0 20.0,$\gamma_{\rm Hj1}$,km/s,,
+baseline_offset_rv_HARPSjiang2,0.0,1,uniform -20.0 20.0,$\gamma_{\rm Hj2}$,km/s,,
+baseline_offset_rv_HARPSW77,0.0,1,uniform -20.0 20.0,$\gamma_{\rm HW77}$,km/s,,
 #noise params
 ln_err_flux_TESS120,-8.210,1,uniform -15.0 0.0,$\ln\sigma_{\rm T120}$,log rel flux,,
 ln_err_flux_TESS600,-8.039,1,uniform -15.0 0.0,$\ln\sigma_{\rm T600}$,log rel flux,,

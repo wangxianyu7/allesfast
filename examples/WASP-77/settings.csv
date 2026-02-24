@@ -10,7 +10,7 @@ mcmc_ntemps,8
 mcmc_thin_by,10
 mcmc_maxgr,1.01
 mcmc_mintz,1000
-de_ngen,10000
+de_ngen,1000
 use_mist_prior,True
 use_sed_prior,True
 sed_file,1129033.sed
@@ -28,4 +28,10 @@ b_flux_weighted_HARPSjiang0,True
 b_flux_weighted_HARPSjiang1,True
 b_flux_weighted_HARPSjiang2,True
 b_flux_weighted_HARPSW77,True
+baseline_rv_CORALIE,sample_offset
+baseline_rv_HARPS,sample_offset
+baseline_rv_HARPSjiang0,sample_offset
+baseline_rv_HARPSjiang1,sample_offset
+baseline_rv_HARPSjiang2,sample_offset
+baseline_rv_HARPSW77,sample_offset
 cornerplot,False
