@@ -10,9 +10,10 @@ mcmc_ntemps,8
 mcmc_thin_by,10
 mcmc_maxgr,1.01
 mcmc_mintz,1000
-de_ngen,1000
+de_ngen,10000
 use_mist_prior,True
 use_sed_prior,True
+use_ttv_prior,True
 sed_file,1129033.sed
 t_exp_TESS120,0.0013889
 t_exp_n_int_TESS120,1
