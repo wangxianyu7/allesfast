@@ -98,6 +98,7 @@ from .rm_models import hirano2011_rm
 # Physical constants for computing thermal Gaussian broadening β_thermal.
 _kB_SI   = 1.380649e-23          # Boltzmann constant, J/K
 _m_Fe_kg = 56 * 1.66054e-27      # Iron atom mass, kg (dominant lines in RV analyses)
+_c_kms   = 2.998e5               # Speed of light, km/s (for β_IP from resolution R)
 
 # Instrumental profile Gaussian width β_IP for common RV spectrographs (km/s).
 # β_IP = c / (R * 2*sqrt(2*ln2))  where R is the spectral resolving power.
@@ -164,13 +165,16 @@ def setup_transit_models(basement=None):
 
 
 def get_rm_hirano2011(time, rr, ar, period, t0, inc, ecc, omega, lambda_r, vsini, xi, zeta, u1, u2,
-                      teff=5500.0, inst=None):
+                      teff=5500.0, inst=None, resolution=None):
     """
-    teff : float  Stellar effective temperature in K (A_teff).  Used to
-                  compute thermal Gaussian broadening β_thermal.
-    inst : str    RV instrument name (e.g. 'Keck', 'HARPS').  Used to look up
-                  the instrumental profile width β_IP from _BETA_IP_KMS.
-                  Unknown instruments fall back to _DEFAULT_BETA_IP_KMS.
+    teff       : float  Stellar effective temperature in K (A_teff).  Used to
+                        compute thermal Gaussian broadening β_thermal.
+    inst       : str    RV instrument name.  Supports dot-notation sub-datasets,
+                        e.g. 'HARPS.jiang0' resolves to 'HARPS' for β_IP lookup.
+                        Unknown base names fall back to _DEFAULT_BETA_IP_KMS.
+    resolution : float  Spectral resolving power R.  When provided, β_IP is
+                        computed as c/(R·2√(2ln2)) and overrides the inst lookup.
+                        Corresponds to settings.csv: 'b_flux_weighted_inst,85000'.
 
     Full Gaussian broadening (Hirano+2011 Eq. 20):
         β = sqrt(β_thermal² + ξ² + β_IP²)
@@ -182,7 +186,15 @@ def get_rm_hirano2011(time, rr, ar, period, t0, inc, ecc, omega, lambda_r, vsini
 
     # Compute full Gaussian broadening β (Hirano+2011 Eq. 20)
     beta_thermal_kms = np.sqrt(2.0 * _kB_SI * teff / _m_Fe_kg) / 1e3
-    beta_ip_kms = _BETA_IP_KMS.get(inst, _DEFAULT_BETA_IP_KMS) if inst else _DEFAULT_BETA_IP_KMS
+    if resolution is not None:
+        # Explicit resolving power R given: compute β_IP directly
+        beta_ip_kms = _c_kms / (float(resolution) * 2.0 * np.sqrt(2.0 * np.log(2.0)))
+    elif inst:
+        # Try full name first; fall back to base name (before first dot)
+        base_inst = inst.split('.')[0]
+        beta_ip_kms = _BETA_IP_KMS.get(inst, _BETA_IP_KMS.get(base_inst, _DEFAULT_BETA_IP_KMS))
+    else:
+        beta_ip_kms = _DEFAULT_BETA_IP_KMS
     beta_total_kms = np.sqrt(beta_thermal_kms**2 + xi**2 + beta_ip_kms**2)
 
     # Convert conjunction time to periastron time for the Hirano model.
@@ -1121,7 +1133,9 @@ def rv_fct(params, inst, companion, xx=None, settings=None):
         # let us use 12 hours as the duration of the transit here
         in_transit_mask = transit_mask(xx, per1, T_tra_tot, tc1)
         rm = np.zeros_like(xx)
-        if config.BASEMENT.settings[companion+'_flux_weighted_'+inst] == True:
+        _fw = config.BASEMENT.settings[companion+'_flux_weighted_'+inst]
+        _rm_resolution = _fw if isinstance(_fw, float) and _fw > 1.0 else None
+        if _fw:
             # print(inst,'RM com')
             time = xx[in_transit_mask]
             rr = params[companion+'_rr']
@@ -1155,10 +1169,10 @@ def rv_fct(params, inst, companion, xx=None, settings=None):
                     transitbjd = bjdtime[:, None] + time_offsets
                     # Single vectorised call: pass all npoints*ninterp times at once,
                     # then reshape and average — avoids recomputing M̃(σ) per exposure.
-                    all_rm = get_rm_hirano2011(transitbjd.ravel(), rr, ar, period, t0, inc, ecc, omega, lambda_r, vsini, zi, zeta, u1, u2, teff=teff_val, inst=inst)
+                    all_rm = get_rm_hirano2011(transitbjd.ravel(), rr, ar, period, t0, inc, ecc, omega, lambda_r, vsini, zi, zeta, u1, u2, teff=teff_val, inst=inst, resolution=_rm_resolution)
                     rm[in_transit_mask] = all_rm.reshape(npoints, ninterp).mean(axis=1)
                 else:
-                    rm[in_transit_mask] = get_rm_hirano2011(time, rr, ar, period, t0, inc, ecc, omega, lambda_r, vsini, zi, zeta, u1, u2, teff=teff_val, inst=inst)
+                    rm[in_transit_mask] = get_rm_hirano2011(time, rr, ar, period, t0, inc, ecc, omega, lambda_r, vsini, zi, zeta, u1, u2, teff=teff_val, inst=inst, resolution=_rm_resolution)
                 # except:
                 #     rm[in_transit_mask] = np.nan
             if np.isnan(np.mean(rm)):

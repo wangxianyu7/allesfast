@@ -480,8 +480,15 @@ class Basement():
                     
         for companion in self.settings['companions_rv']:
             for inst in list(self.settings['inst_rv']) + list(self.settings['inst_rv2']):
-                if companion+'_flux_weighted_'+inst in self.settings: 
-                    self.settings[companion+'_flux_weighted_'+inst] = set_bool(self.settings[companion+'_flux_weighted_'+inst])
+                key = companion + '_flux_weighted_' + inst
+                if key in self.settings:
+                    raw = self.settings[key]
+                    try:
+                        r = float(raw)
+                        # A resolution R is always >> 1; treat as resolving power
+                        self.settings[key] = r if r > 1.0 else bool(int(r))
+                    except (ValueError, TypeError):
+                        self.settings[key] = set_bool(raw)
                 else:
                     self.settings[companion+'_flux_weighted_'+inst] = False
         
