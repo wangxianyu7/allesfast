@@ -102,6 +102,20 @@ class Basement():
                 _idx = np.where(self.fitkeys == _key)[0][0]
                 self.theta_0[_idx] = np.median(self.data[_inst]['rv'])
 
+        # Load observed transit midtimes (*.{companion}.ttv files) for TTV prior
+        self.ttv_data = {}
+        import glob as _glob
+        for _ttv_path in _glob.glob(os.path.join(self.datadir, '*.ttv')):
+            _fname = os.path.basename(_ttv_path)
+            # Expect format: anything.{companion}.ttv  (e.g. n20240817.b.ttv)
+            _parts = _fname.split('.')
+            if len(_parts) >= 3:
+                _companion = _parts[-2]   # 'b' from 'n20240817.b.ttv'
+                _arr = np.genfromtxt(_ttv_path, dtype=float)
+                if _arr.ndim == 1:
+                    _arr = _arr[np.newaxis, :]   # single-row file edge case
+                self.ttv_data[_companion] = (_arr[:, 0], _arr[:, 1])
+
         if self.settings['shift_epoch']:
             try:
                 self.change_epoch()

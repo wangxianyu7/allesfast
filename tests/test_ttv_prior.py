@@ -74,3 +74,26 @@ def test_use_ttv_prior_setting_default_false(tmp_path):
     (tmp_path / 'HARPS.csv').write_text("2455870.0,0.0,0.001\n2455871.0,0.1,0.001\n2455872.0,-0.1,0.001\n")
     b = Basement(str(tmp_path), quiet=True)
     assert b.settings['use_ttv_prior'] is False
+
+
+_TTV_CONTENT = """\
+2455870.4505400 0.0010417
+2456271.6588800 0.0009722
+2456524.6261700 0.0012500
+"""
+
+
+def test_ttv_data_loaded_for_companion(tmp_path):
+    """*.b.ttv file is loaded into BASEMENT.ttv_data['b']."""
+    b = _make_basement(tmp_path, ttv_files={'obs.b.ttv': _TTV_CONTENT})
+    assert 'b' in b.ttv_data
+    T_obs, sigma = b.ttv_data['b']
+    assert len(T_obs) == 3
+    np.testing.assert_allclose(T_obs[0], 2455870.4505400)
+    np.testing.assert_allclose(sigma[0], 0.0010417)
+
+
+def test_ttv_data_empty_when_no_files(tmp_path):
+    """ttv_data is an empty dict when no .ttv files exist."""
+    b = _make_basement(tmp_path)
+    assert b.ttv_data == {}
