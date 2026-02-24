@@ -254,7 +254,7 @@ def run_de_optimization(s):
 
 
 def _save_de_results(de):
-    """Save DE population to CSV and generate a corner plot."""
+    """Save DE population to CSV, generate fit plots, and optionally a corner plot."""
     import pandas as pd
     import matplotlib.pyplot as plt
     from corner import corner
@@ -283,6 +283,9 @@ def _save_de_results(de):
     best_df.to_csv(best_file, index=False)
     logprint(f"  Saved: {best_file}")
 
+    # --- fit diagnostic plots at best DE solution ---
+    _plot_de_fit(pop[best_idx])
+
     if config.BASEMENT.settings.get('cornerplot', False):
         # --- corner plot of the final population, weighted by lnprob ---
         try:
@@ -302,6 +305,65 @@ def _save_de_results(de):
             logprint(f"  Saved: {plot_file}")
         except Exception as e:
             logprint(f"  WARNING: DE corner plot failed – {e}")
+
+
+def _plot_de_fit(best_theta):
+    """Generate model fit plots at the best DE solution (light curves, RVs, SED, MIST)."""
+    import matplotlib.pyplot as plt
+    from ..general_output import afplot, afplot_per_transit, get_params_from_samples
+    from ..star import make_sed_plot, make_mist_plot
+
+    outdir  = config.BASEMENT.outdir
+    samples = best_theta[np.newaxis, :]          # shape (1, ndim)
+
+    for companion in config.BASEMENT.settings['companions_all']:
+        try:
+            fig, _ = afplot(samples, companion)
+            if fig is not None:
+                path = os.path.join(outdir, f'optimized_{companion}.pdf')
+                fig.savefig(path, bbox_inches='tight')
+                plt.close(fig)
+                logprint(f"  Saved: {path}")
+        except Exception as e:
+            logprint(f"  WARNING: DE fit plot failed for {companion} – {e}")
+
+    for companion in config.BASEMENT.settings['companions_phot']:
+        for inst in config.BASEMENT.settings['inst_phot']:
+            first_transit = 0
+            while first_transit >= 0:
+                try:
+                    fig, _, last_transit, total_transits = afplot_per_transit(
+                        samples, inst, companion,
+                        kwargs_dict={'first_transit': first_transit},
+                    )
+                    path = os.path.join(outdir,
+                        f'optimized_per_transit_{inst}_{companion}_{last_transit}th.pdf')
+                    fig.savefig(path, bbox_inches='tight')
+                    plt.close(fig)
+                    logprint(f"  Saved: {path}")
+                    if total_transits > 0 and last_transit < total_transits - 1:
+                        first_transit = last_transit
+                    else:
+                        first_transit = -1
+                except Exception:
+                    first_transit = -1
+
+    params_median, _, _ = get_params_from_samples(samples)
+    _sed_file = config.BASEMENT.settings.get('sed_file', None)
+    try:
+        path = make_sed_plot(params_median, config.BASEMENT.datadir, outdir,
+                             outfile='optimized_sed_fit.png', sed_file=_sed_file)
+        if path:
+            logprint(f"  Saved: {path}")
+    except Exception as e:
+        logprint(f"  WARNING: DE SED plot failed – {e}")
+    try:
+        path = make_mist_plot(params_median, outdir,
+                              outfile='optimized_mist_track.png')
+        if path:
+            logprint(f"  Saved: {path}")
+    except Exception as e:
+        logprint(f"  WARNING: DE MIST plot failed – {e}")
 
 
 ###########################################################################
