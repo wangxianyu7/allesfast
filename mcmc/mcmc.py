@@ -283,24 +283,25 @@ def _save_de_results(de):
     best_df.to_csv(best_file, index=False)
     logprint(f"  Saved: {best_file}")
 
-    # --- corner plot of the final population, weighted by lnprob ---
-    try:
-        weights = np.exp(lnprobs - lnprobs.max())   # normalised, numerically safe
-        weights /= weights.sum()
-        fig = corner(pop, labels=list(fitkeys), weights=weights,
-                     show_titles=True, title_fmt='.4f',
-                     quantiles=[0.16, 0.5, 0.84],
-                     plot_datapoints=True, plot_density=True)
-        fig.suptitle('DE pre-optimisation population\n'
-                     f'(best lnprob = {lnprobs[best_idx]:.4f}, '
-                     f'Δlnprob = {np.ptp(lnprobs):.4f})',
-                     y=1.01, fontsize=10)
-        plot_file = os.path.join(outdir, 'optimized_corner.pdf')
-        fig.savefig(plot_file, bbox_inches='tight')
-        plt.close(fig)
-        logprint(f"  Saved: {plot_file}")
-    except Exception as e:
-        logprint(f"  WARNING: DE corner plot failed – {e}")
+    if config.BASEMENT.settings.get('cornerplot', False):
+        # --- corner plot of the final population, weighted by lnprob ---
+        try:
+            weights = np.exp(lnprobs - lnprobs.max())   # normalised, numerically safe
+            weights /= weights.sum()
+            fig = corner(pop, labels=list(fitkeys), weights=weights,
+                         show_titles=True, title_fmt='.4f',
+                         quantiles=[0.16, 0.5, 0.84],
+                         plot_datapoints=True, plot_density=True)
+            fig.suptitle('DE pre-optimisation population\n'
+                         f'(best lnprob = {lnprobs[best_idx]:.4f}, '
+                         f'Δlnprob = {np.ptp(lnprobs):.4f})',
+                         y=1.01, fontsize=10)
+            plot_file = os.path.join(outdir, 'optimized_corner.pdf')
+            fig.savefig(plot_file, bbox_inches='tight')
+            plt.close(fig)
+            logprint(f"  Saved: {plot_file}")
+        except Exception as e:
+            logprint(f"  WARNING: DE corner plot failed – {e}")
 
 
 ###########################################################################
