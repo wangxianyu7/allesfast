@@ -112,6 +112,49 @@ def get_mistage(eep: float, mstar: float, feh: float,
     return float((1 - feh_frac) * v0 + feh_frac * v1)
 
 
+def get_mist_point(eep: float, mstar: float, feh: float,
+                   vvcrit: float = None, alpha: float = None):
+    """
+    Return (mistteff, mistrstar) interpolated from MIST at the given (EEP, mstar, feh).
+    Uses the same bilinear (mass x feh) + linear EEP interpolation as massradius_mist().
+    Returns (np.nan, np.nan) if inputs are out of range or interpolation fails.
+    """
+    if not (ALLOWED_MASS.min() <= mstar <= ALLOWED_MASS.max()):
+        return np.nan, np.nan
+    if not (ALLOWED_INITFEH.min() <= feh <= ALLOWED_INITFEH.max()):
+        return np.nan, np.nan
+
+    mass_lo, mass_frac = _mass_bracket(mstar)
+    feh_lo,  feh_frac  = _feh_bracket(feh)
+    vvcritndx = 0 if vvcrit is None else _vvcrit_index(vvcrit)
+    alphandx  = 0 if alpha  is None else _alpha_index(alpha)
+
+    eep_lo   = int(np.floor(eep)) - 1
+    eep_hi   = eep_lo + 1
+    eep_frac = eep - np.floor(eep)
+
+    if eep_lo < 0:
+        return np.nan, np.nan
+
+    corner_teff  = {}
+    corner_rstar = {}
+    for di in (0, 1):
+        for dj in (0, 1):
+            ages_c, rstars_c, teffs_c, _, _ = _get_track_tuple_cached(
+                mass_lo + di, feh_lo + dj, vvcritndx, alphandx
+            )
+            if eep_hi >= len(ages_c):
+                return np.nan, np.nan
+            corner_teff[(di, dj)]  = (1 - eep_frac) * teffs_c[eep_lo]  + eep_frac * teffs_c[eep_hi]
+            corner_rstar[(di, dj)] = (1 - eep_frac) * rstars_c[eep_lo] + eep_frac * rstars_c[eep_hi]
+
+    t0 = (1 - mass_frac) * corner_teff[(0, 0)]  + mass_frac * corner_teff[(1, 0)]
+    t1 = (1 - mass_frac) * corner_teff[(0, 1)]  + mass_frac * corner_teff[(1, 1)]
+    r0 = (1 - mass_frac) * corner_rstar[(0, 0)] + mass_frac * corner_rstar[(1, 0)]
+    r1 = (1 - mass_frac) * corner_rstar[(0, 1)] + mass_frac * corner_rstar[(1, 1)]
+    return float((1 - feh_frac) * t0 + feh_frac * t1), float((1 - feh_frac) * r0 + feh_frac * r1)
+
+
 def _vvcrit_index(vvcrit):
     matches = np.where(np.isclose(ALLOWED_VVCRIT, vvcrit))[0]
     if len(matches) == 0:

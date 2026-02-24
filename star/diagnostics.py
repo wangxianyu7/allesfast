@@ -18,7 +18,7 @@ from scipy.io import readsav
 from scipy.ndimage import uniform_filter1d
 
 from .models import StellarInputs
-from .massradius_mist import massradius_mist
+from .massradius_mist import massradius_mist, get_mist_point, _interpolate_track_for_plot
 from .sed_utils import mistmultised, read_sed_file
 
 # ---------------------------------------------------------------------------
@@ -165,13 +165,32 @@ def _star_from_params(params):
     )
 
 
+def _star_B_from_params(params):
+    distance = params.get("B_distance", None)
+    if distance is None:
+        parallax = params.get("B_parallax") or params.get("A_parallax", None)
+        if parallax is not None and float(parallax) > 0:
+            distance = 1000.0 / float(parallax)
+    return StellarInputs(
+        teff=params.get("B_teff", None),
+        logg=params.get("B_logg", None),
+        feh=params.get("B_feh") or params.get("A_feh", None),
+        rstar=params.get("B_rstar", None),
+        mstar=params.get("B_mstar", None),
+        eep=params.get("B_eep", None),
+        age=params.get("B_age", None),
+        av=params.get("B_av") or params.get("A_av", None),
+        distance=distance,
+    )
+
+
 # ---------------------------------------------------------------------------
 # Public plot functions
 # ---------------------------------------------------------------------------
 
 def make_sed_plot(params, datadir, outdir, outfile="stellar_sed_fit.png", errscale=1.0, sed_file=None):
-    star = _star_from_params(params)
-    if any(v is None for v in [star.teff, star.rstar, star.feh, star.av, star.distance, star.mstar]):
+    star_A = _star_from_params(params)
+    if any(v is None for v in [star_A.teff, star_A.rstar, star_A.feh, star_A.av, star_A.distance, star_A.mstar]):
         return None
 
     # Resolve SED file
@@ -186,20 +205,40 @@ def make_sed_plot(params, datadir, outdir, outfile="stellar_sed_fit.png", errsca
         return None
 
     gravity_sun = 27420.011
-    logg  = np.log10(gravity_sun * float(star.mstar) / float(star.rstar) ** 2)
-    lstar = (float(star.rstar) ** 2) * (float(star.teff) / 5772.0) ** 4
 
-    sed_data = read_sed_file(sed_file, nstars=1)
+    # Check for Star B
+    star_B = _star_B_from_params(params)
+    has_B = all(getattr(star_B, k) is not None
+                for k in ('teff', 'rstar', 'feh', 'av', 'distance', 'mstar'))
+
+    if has_B:
+        nstars = 2
+        teff_arr  = np.array([float(star_A.teff),  float(star_B.teff)])
+        logg_arr  = np.array([
+            np.log10(gravity_sun * float(star_A.mstar) / float(star_A.rstar) ** 2),
+            np.log10(gravity_sun * float(star_B.mstar) / float(star_B.rstar) ** 2),
+        ])
+        feh_arr   = np.array([float(star_A.feh),   float(star_B.feh)])
+        av_arr    = np.array([float(star_A.av),     float(star_B.av)])
+        dist_arr  = np.array([float(star_A.distance), float(star_B.distance)])
+        lstar_arr = np.array([
+            float(star_A.rstar) ** 2 * (float(star_A.teff) / 5772.0) ** 4,
+            float(star_B.rstar) ** 2 * (float(star_B.teff) / 5772.0) ** 4,
+        ])
+    else:
+        nstars = 1
+        logg_A = np.log10(gravity_sun * float(star_A.mstar) / float(star_A.rstar) ** 2)
+        teff_arr  = np.array([float(star_A.teff)])
+        logg_arr  = np.array([logg_A])
+        feh_arr   = np.array([float(star_A.feh)])
+        av_arr    = np.array([float(star_A.av)])
+        dist_arr  = np.array([float(star_A.distance)])
+        lstar_arr = np.array([float(star_A.rstar) ** 2 * (float(star_A.teff) / 5772.0) ** 4])
+
+    sed_data = read_sed_file(sed_file, nstars=nstars)
     chi2, blendmag, _, _ = mistmultised(
-        np.array([float(star.teff)]),
-        np.array([logg]),
-        np.array([float(star.feh)]),
-        np.array([float(star.av)]),
-        np.array([float(star.distance)]),
-        np.array([lstar]),
-        float(errscale),
-        sed_file,
-        sed_data=sed_data,
+        teff_arr, logg_arr, feh_arr, av_arr, dist_arr, lstar_arr,
+        float(errscale), sed_file, sed_data=sed_data,
     )
 
     zero_point = np.asarray(sed_data["zero_point"], dtype=float)
@@ -214,13 +253,22 @@ def make_sed_plot(params, datadir, outdir, outfile="stellar_sed_fit.png", errsca
     model_flux = zero_point * 10 ** (-0.4 * blendmag)
     residuals  = np.where(obs_err > 0, (obs_flux - model_flux) / obs_err, 0.0)
 
-    # NextGen continuous atmosphere
-    atmosphere = None
-    lamflam = _interp_atmosphere(float(star.teff), logg, float(star.feh))
-    if lamflam is not None:
-        lamflam = _scale_atmosphere(lamflam, float(star.rstar), float(star.distance))
-        lamflam = _apply_extinction(lamflam, float(star.av))
-        atmosphere = (_WAVELENGTH, lamflam)
+    # NextGen continuous atmosphere(s)
+    def _get_atmosphere(teff, logg, feh, rstar, distance, av):
+        lf = _interp_atmosphere(float(teff), float(logg), float(feh))
+        if lf is None:
+            return None
+        lf = _scale_atmosphere(lf, float(rstar), float(distance))
+        lf = _apply_extinction(lf, float(av))
+        return lf
+
+    atm_A = _get_atmosphere(star_A.teff, logg_arr[0], star_A.feh,
+                            star_A.rstar, star_A.distance, star_A.av)
+    atm_B = _get_atmosphere(star_B.teff, logg_arr[1] if has_B else logg_arr[0],
+                            star_B.feh if has_B else star_A.feh,
+                            star_B.rstar if has_B else star_A.rstar,
+                            star_B.distance if has_B else star_A.distance,
+                            star_B.av if has_B else star_A.av) if has_B else None
 
     # ------------------------------------------------------------------ figure
     fig = plt.figure(figsize=(10, 8))
@@ -231,16 +279,27 @@ def make_sed_plot(params, datadir, outdir, outfile="stellar_sed_fit.png", errsca
     ax_data = fig.add_subplot(outer[0])
     ax_oc   = fig.add_subplot(outer[1], sharex=ax_data)
 
-    # --- Top panel ---
-    # Model atmosphere (black line)
-    if atmosphere is not None:
-        wav, lf = atmosphere
-        lf_smooth = uniform_filter1d(lf, size=10)
-        mask = lf_smooth > 0
-        ax_data.plot(wav[mask], np.log10(lf_smooth[mask]), '-',
+    # --- Top panel: atmosphere curves ---
+    if has_B and atm_A is not None and atm_B is not None:
+        # Show individual components and their sum
+        combined = atm_A + atm_B
+        for lf, color, label in [
+            (atm_A,    'black',       f'Star A  ({float(star_A.teff):.0f} K)'),
+            (atm_B,    'steelblue',   f'Star B  ({float(star_B.teff):.0f} K)'),
+            (combined, 'gray',        'Combined'),
+        ]:
+            lf_s = uniform_filter1d(lf, size=10)
+            mask = lf_s > 0
+            ls = '--' if color == 'gray' else '-'
+            ax_data.plot(_WAVELENGTH[mask], np.log10(lf_s[mask]), ls,
+                         color=color, lw=1, zorder=1, label=label)
+    elif atm_A is not None:
+        lf_s = uniform_filter1d(atm_A, size=10)
+        mask = lf_s > 0
+        ax_data.plot(_WAVELENGTH[mask], np.log10(lf_s[mask]), '-',
                      color='black', lw=1, zorder=1, label='Model atmosphere')
 
-    # Model band fluxes (blue circles)
+    # Model band fluxes (blue circles — combined model from mistmultised)
     safe_model = np.where(model_flux > 0, model_flux, np.nan)
     ax_data.plot(weff, np.log10(safe_model), 'o',
                  color='blue', ms=8, zorder=3, label='Model bands')
@@ -264,12 +323,13 @@ def make_sed_plot(params, datadir, outdir, outfile="stellar_sed_fit.png", errsca
     ax_data.set_xscale('log')
     ax_data.set_xlim(0.3, 30)
     ax_data.set_ylabel(r'log $\lambda F_\lambda$ (erg s$^{-1}$ cm$^{-2}$)')
-    ax_data.set_title(
-        rf'SED fit  $T_{{\rm eff}}={float(star.teff):.0f}$ K, '
-        rf'$A_V={float(star.av):.3f}$, '
-        rf'$\chi^2={chi2:.2f}$'
+    title_str = (
+        rf'SED fit  $T_{{\rm eff;A}}={float(star_A.teff):.0f}$ K'
+        + (rf', $T_{{\rm eff;B}}={float(star_B.teff):.0f}$ K' if has_B else '')
+        + rf', $A_V={float(star_A.av):.3f}$, $\chi^2={chi2:.2f}$'
     )
-    ax_data.legend(loc='upper right', frameon=False)
+    ax_data.set_title(title_str)
+    ax_data.legend(loc='upper right', frameon=False, fontsize=9)
     plt.setp(ax_data.get_xticklabels(), visible=False)
 
     all_vals = np.concatenate([obs_flux[obs_flux > 0], model_flux[model_flux > 0]])
@@ -302,18 +362,107 @@ def make_sed_plot(params, datadir, outdir, outfile="stellar_sed_fit.png", errsca
 
 
 def make_mist_plot(params, outdir, outfile="stellar_mist_track.png"):
-    star = _star_from_params(params)
-    if any(v is None for v in [star.eep, star.mstar, star.feh, star.teff, star.rstar]):
+    star_A = _star_from_params(params)
+    if any(v is None for v in [star_A.eep, star_A.mstar, star_A.feh, star_A.teff, star_A.rstar]):
         return None
     os.makedirs(outdir, exist_ok=True)
     path = os.path.join(outdir, outfile)
-    _ = massradius_mist(
-        eep=float(star.eep),
-        mstar=float(star.mstar),
-        feh=float(star.feh),
-        teff=float(star.teff),
-        rstar=float(star.rstar),
-        debug=True,
-        pngname=path,
-    )
+
+    star_B = _star_B_from_params(params)
+    has_B = all(getattr(star_B, k) is not None
+                for k in ('eep', 'mstar', 'feh', 'teff', 'rstar'))
+
+    if not has_B:
+        _ = massradius_mist(
+            eep=float(star_A.eep),
+            mstar=float(star_A.mstar),
+            feh=float(star_A.feh),
+            teff=float(star_A.teff),
+            rstar=float(star_A.rstar),
+            debug=True,
+            pngname=path,
+        )
+        return path if os.path.exists(path) else None
+
+    # Binary: plot both tracks on the same HR diagram
+    _make_binary_mist_plot(star_A, star_B, path)
     return path if os.path.exists(path) else None
+
+
+def _make_binary_mist_plot(star_A, star_B, outfile):
+    """Create a MIST HR diagram with evolutionary tracks for both stars."""
+    gravitysun = 27420.011
+    ZAMS_EEP = 202
+
+    def _get_track_data(star):
+        try:
+            teffs_iso, rstars_iso, _, eeps_iso = _interpolate_track_for_plot(
+                float(star.mstar), float(star.feh)
+            )
+        except Exception:
+            return None, None
+        if len(teffs_iso) == 0:
+            return None, None
+        safe_r = np.clip(rstars_iso, 1e-6, None)
+        track_logg = np.log10((float(star.mstar) / safe_r ** 2) * gravitysun)
+        finite = np.isfinite(teffs_iso) & np.isfinite(track_logg)
+        eep_best = float(star.eep)
+        if (eep_best + 3) > np.max(eeps_iso):
+            eep_cutoff = 1
+        else:
+            eep_cutoff = min(ZAMS_EEP, eep_best)
+        use = finite & (track_logg > 3) & (track_logg < 5) & (eeps_iso >= eep_cutoff)
+        if not np.any(use):
+            use = finite
+        return teffs_iso[use], track_logg[use]
+
+    def _get_point(star):
+        logg_best = np.log10((float(star.mstar) / max(float(star.rstar), 1e-6) ** 2) * gravitysun)
+        mistteff, mistrstar = get_mist_point(float(star.eep), float(star.mstar), float(star.feh))
+        if np.isnan(mistteff):
+            logg_mist = logg_best
+        else:
+            logg_mist = np.log10((float(star.mstar) / max(mistrstar, 1e-6) ** 2) * gravitysun)
+        return float(star.teff), logg_best, mistteff, logg_mist
+
+    teff_vals_A, logg_vals_A = _get_track_data(star_A)
+    teff_vals_B, logg_vals_B = _get_track_data(star_B)
+    teff_A, logg_A, mistteff_A, logg_mist_A = _get_point(star_A)
+    teff_B, logg_B, mistteff_B, logg_mist_B = _get_point(star_B)
+
+    fig, ax = plt.subplots(figsize=(6, 5.5))
+
+    if teff_vals_A is not None:
+        ax.plot(teff_vals_A, logg_vals_A, color='black', lw=1.0, label='Star A track')
+    if teff_vals_B is not None:
+        ax.plot(teff_vals_B, logg_vals_B, color='steelblue', lw=1.0, label='Star B track')
+
+    ax.plot([teff_A], [logg_A], 'o', color='black', ms=6, zorder=5)
+    ax.plot([mistteff_A], [logg_mist_A], '*', color='red', ms=12, zorder=6)
+    ax.plot([teff_B], [logg_B], 'o', color='steelblue', ms=6, zorder=5)
+    ax.plot([mistteff_B], [logg_mist_B], '*', color='darkorange', ms=12, zorder=6)
+
+    # Axis limits: encompass both tracks and marker points (Teff decreasing left→right)
+    all_teff = [t for arr in [teff_vals_A, teff_vals_B] if arr is not None for t in arr]
+    all_logg = [g for arr in [logg_vals_A, logg_vals_B] if arr is not None for g in arr]
+    all_teff += [teff_A, teff_B]
+    all_logg += [logg_A, logg_B]
+    for v in [mistteff_A, mistteff_B]:
+        if np.isfinite(v):
+            all_teff.append(v)
+    for v in [logg_mist_A, logg_mist_B]:
+        if np.isfinite(v):
+            all_logg.append(v)
+
+    margin_t = (max(all_teff) - min(all_teff)) * 0.08 + 50
+    margin_g = (max(all_logg) - min(all_logg)) * 0.08 + 0.05
+    ax.set_xlim(max(all_teff) + margin_t, min(all_teff) - margin_t)
+    ax.set_ylim(max(all_logg) + margin_g, min(all_logg) - margin_g)
+
+    ax.set_xlabel(r'$T_{\mathrm{eff}}$ (K)')
+    ax.set_ylabel(r'$\log g_\star$ (cgs)')
+    ax.legend(loc='upper left', frameon=False, fontsize=9)
+
+    fig.tight_layout()
+    fig.savefig(outfile, dpi=200, bbox_inches='tight')
+    plt.close(fig)

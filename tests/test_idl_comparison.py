@@ -318,6 +318,50 @@ def test_sed_chi2_two_stars():
 
 
 # ---------------------------------------------------------------------------
+# 5. get_mist_point test
+# ---------------------------------------------------------------------------
+def test_get_mist_point():
+    """get_mist_point returns finite (mistteff, mistrstar) for valid inputs."""
+    from allesfast.star.massradius_mist import get_mist_point
+    t, r = get_mist_point(395.2, 0.9031, 0.1477)
+    assert np.isfinite(t), f"Expected finite mistteff, got {t}"
+    assert np.isfinite(r), f"Expected finite mistrstar, got {r}"
+    assert 5000 < t < 6500, f"Unexpected mistteff={t} for WASP-77 A"
+    assert 0.7 < r < 1.3,   f"Unexpected mistrstar={r} for WASP-77 A"
+
+    t2, r2 = get_mist_point(342.5, 0.7322, 0.1477)
+    assert np.isfinite(t2), f"Expected finite mistteff for star B, got {t2}"
+    assert np.isfinite(r2), f"Expected finite mistrstar for star B, got {r2}"
+    assert 4000 < t2 < 5500, f"Unexpected mistteff={t2} for WASP-77 B"
+    assert 0.5 < r2 < 1.0,   f"Unexpected mistrstar={r2} for WASP-77 B"
+
+    # Out-of-range should return nan
+    t_nan, r_nan = get_mist_point(395.2, 500.0, 0.0)  # mstar way out of range
+    assert np.isnan(t_nan) and np.isnan(r_nan), "Expected nan for out-of-range mstar"
+
+
+# ---------------------------------------------------------------------------
+# 6. make_mist_plot binary test
+# ---------------------------------------------------------------------------
+def test_make_mist_plot_binary():
+    """make_mist_plot creates a PNG for a binary star system."""
+    import tempfile
+    from allesfast.star.diagnostics import make_mist_plot
+
+    params = {
+        'A_teff': 5500.0, 'A_rstar': 0.9471, 'A_mstar': 0.9031,
+        'A_feh': 0.1477, 'A_eep': 395.2, 'A_av': 0.0575, 'A_parallax': 9.512,
+        'B_teff': 4622.0, 'B_rstar': 0.7004, 'B_mstar': 0.7322,
+        'B_feh': 0.1477, 'B_eep': 342.5, 'B_av': 0.0575, 'B_parallax': 9.512,
+    }
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        path = make_mist_plot(params, tmpdir)
+        assert path is not None and os.path.exists(path), \
+            f"Expected binary MIST plot at {path}"
+
+
+# ---------------------------------------------------------------------------
 # main
 # ---------------------------------------------------------------------------
 def main():
