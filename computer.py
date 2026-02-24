@@ -1210,6 +1210,17 @@ def calculate_external_priors(params):
             if val is not None and ref is not None and np.isfinite(float(val)) and np.isfinite(float(ref)):
                 lnp -= 0.5 * ((float(val) - float(ref)) / tol) ** 2
 
+    #::: TTV linear-ephemeris prior
+    if config.BASEMENT.settings.get('use_ttv_prior', False):
+        for _comp, (_T_obs, _sigma) in config.BASEMENT.ttv_data.items():
+            _tc = params.get(_comp + '_epoch')
+            _P  = params.get(_comp + '_period')
+            if _tc is None or _P is None or _P <= 0:
+                return -np.inf
+            _N      = np.round((_T_obs - _tc) / _P)
+            _T_pred = _tc + _N * _P
+            lnp    += -0.5 * np.sum((_T_obs - _T_pred) ** 2 / _sigma ** 2)
+
     #::: build stellar inputs — star A (always)
     _distance = params.get('A_distance', None)
     if _distance is None:
