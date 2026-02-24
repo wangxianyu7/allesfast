@@ -93,7 +93,15 @@ class Basement():
         self.load_settings()
         self.load_params()
         self.load_data()
-        
+
+        # Auto-initialize RV gamma offsets (baseline_offset_rv_{inst}) from
+        # the per-instrument RV data median so DE has a good starting point.
+        for _inst in self.settings['inst_rv']:
+            _key = 'baseline_offset_rv_' + _inst
+            if _key in self.fitkeys:
+                _idx = np.where(self.fitkeys == _key)[0][0]
+                self.theta_0[_idx] = np.median(self.data[_inst]['rv'])
+
         if self.settings['shift_epoch']:
             try:
                 self.change_epoch()
