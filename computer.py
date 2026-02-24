@@ -104,12 +104,17 @@ _m_Fe_kg = 56 * 1.66054e-27      # Iron atom mass, kg (dominant lines in RV anal
 # Used to compute the full Gaussian broadening for the Hirano RM model:
 #   β = sqrt(β_thermal² + ξ² + β_IP²)   [Hirano+2011 Eq. 20]
 _BETA_IP_KMS = {
-    'Keck':    2.55,   # R ≈ 50000, Keck/HIRES
-    'HARPS':   1.10,   # R ≈ 115000
-    'FIES':    1.89,   # R ≈ 67000 (high-res mode)
-    'CORALIE': 2.55,   # R ≈ 50000
-    'HDS':     2.83,   # R ≈ 45000, Subaru/HDS
-    'NEID':    1.16,   # R ≈ 110000
+    'Keck':     2.55,   # R ≈  50000, Keck/HIRES
+    'HARPS':    1.10,   # R ≈ 115000
+    'HARPS-N':  1.11,   # R ≈ 115000, TNG/HARPS-N
+    'FIES':     1.89,   # R ≈  67000, NOT/FIES (high-res mode)
+    'CORALIE':  2.55,   # R ≈  50000
+    'HDS':      2.83,   # R ≈  45000, Subaru/HDS
+    'NEID':     1.16,   # R ≈ 110000, WIYN/NEID
+    'KPF':      1.30,   # R ≈  98000, Keck/KPF
+    'MAROON-X': 1.50,   # R ≈  85000, Gemini/MAROON-X
+    'ESPRESSO': 0.91,   # R ≈ 140000, VLT/ESPRESSO (1-UT mode)
+    'CARMENES': 1.35,   # R ≈  94600, CAHA/CARMENES VIS
 }
 _DEFAULT_BETA_IP_KMS = 2.5   # conservative default for unlisted instruments
 
