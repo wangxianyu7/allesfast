@@ -48,17 +48,17 @@ A_zeta,2.7299,1,normal 2.730 0.500,$\zeta$,km/s,,
 A_rstar,0.9471,1,normal 0.9471 0.05,$R_A$,Rsun,,
 A_mstar,0.9031,1,normal 0.9031 0.05,$M_A$,Msun,,
 A_teff,5500,1,normal 5500 132,$T_{\rm eff;A}$,K,,
-A_feh,0.1477,1,normal 0.1477 0.08,$[\rm Fe/H]_A$,dex,,
+A_feh,0.01,1,normal 0.01 0.08,$[\rm Fe/H]_A$,dex,,
 A_eep,395.2,1,uniform 200.0 500.0,${\rm EEP}_A$,,,
 A_av,0.0575,1,uniform 0.0 1.0,$A_v$,mag,,
 A_parallax,9.512,1,normal 9.512 0.118,$\varpi$,mas,,
-A_age,10.709,0,fixed,${\rm age}_A$,Gyr,,
+A_age,7.3,1,uniform 0.5 14.0,${\rm age}_A$,Gyr,,
 #star B stellar params (B_feh, B_av, B_parallax coupled to A)
 B_rstar,0.7004,1,normal 0.7004 0.05,$R_B$,Rsun,,
 B_mstar,0.7322,1,normal 0.7322 0.05,$M_B$,Msun,,
 B_teff,4622,1,normal 4622 200,$T_{\rm eff;B}$,K,,
 B_eep,342.5,1,uniform 200.0 500.0,${\rm EEP}_B$,,,
-B_feh,0.1477,0,fixed,$[\rm Fe/H]_B$,dex,A_feh,0
+B_feh,0.01,0,fixed,$[\rm Fe/H]_B$,dex,A_feh,0
 B_av,0.0575,0,fixed,$A_{v;B}$,mag,A_av,0
 B_parallax,9.512,0,fixed,$\varpi_B$,mas,A_parallax,0
-B_age,10.709,0,fixed,${\rm age}_B$,Gyr,A_age,0.1
+B_age,7.3,0,fixed,${\rm age}_B$,Gyr,A_age,0
