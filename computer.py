@@ -1247,6 +1247,7 @@ def calculate_external_priors(params):
             rstar=params.get('B_rstar', None),
             mstar=params.get('B_mstar', None),
             eep=params.get('B_eep', None),
+            age=params.get('B_age', None),
             feh=params.get('B_feh', None),    # coupled → A_feh via coupled_with
             av=params.get('A_av', None),
             distance=_distance,

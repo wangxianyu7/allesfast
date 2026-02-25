@@ -199,7 +199,7 @@ def _load_track_tuple(mstar, feh, vvcrit, alpha):
     ages, rstars, teffs, fehs, ageweights = track_arr
     return ages.astype(float), rstars.astype(float), teffs.astype(float), fehs.astype(float), ageweights.astype(float)
 
-def massradius_mist(eep, mstar, feh, teff, rstar, vvcrit=None, alpha=None, span=1, epsname=None, debug=False,
+def massradius_mist(eep, mstar, feh, teff, rstar, age=None, vvcrit=None, alpha=None, span=1, epsname=None, debug=False,
                     gravitysun=27420.011, fitage=False, ageweight=None, verbose=False, logname=None,
                     trackfile=None, allowold=False, tefffloor=None, fehfloor=None, rstarfloor=None,
                     agefloor=None, pngname=None, range=None):
@@ -355,6 +355,14 @@ def massradius_mist(eep, mstar, feh, teff, rstar, vvcrit=None, alpha=None, span=
     chi2_feh   = ((mistfeh   - feh)   / (fehfloor                if fehfloor   > 0 else percenterror))**2
 
     chi2 = chi2_rstar + chi2_teff + chi2_feh
+
+    # Age chi2 term: always applied when age is provided (mirrors EXOFASTv2 behaviour —
+    # the `if keyword_set(fitage)` guard was commented out in massradius_mist.pro, so it
+    # runs unconditionally).  This is critical for pinning EEP of stars whose Teff/Rstar
+    # are weakly constrained (e.g. a secondary in a binary).
+    if age is not None:
+        chi2_age = ((mistage - age) / (agefloor * mistage if agefloor is not None and agefloor > 0 else percenterror * mistage)) ** 2
+        chi2 += chi2_age
 
     if trackfile:
         _write_track_file(trackfile, teffs, rstars, ages)
