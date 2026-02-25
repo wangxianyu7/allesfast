@@ -470,10 +470,13 @@ def _interpolate_track_for_plot(mstar, feh, vvcrit=None, alpha=None):
                 ages_c, rstars_c, teffs_c = corner_tracks[idx]
                 idx += 1
                 neep_c = len(ages_c)
-                mineepndx = min(eepndx, neep_c - 2)
-                if mineepndx < 0 or mineepndx + 1 >= neep_c:
+                # Mark invalid when eep_val exceeds this track's length —
+                # mirrors IDL massradius_mist.pro which returns infinity for
+                # eep > neep, keeping the plotting loop from extrapolating.
+                if eepndx + 1 >= neep_c:
                     vals_ok = False
                     break
+                mineepndx = eepndx
                 all_ages[:, i, j] = ages_c[mineepndx:mineepndx + 2]
                 all_rstars[:, i, j] = rstars_c[mineepndx:mineepndx + 2]
                 all_teffs[:, i, j] = teffs_c[mineepndx:mineepndx + 2]
