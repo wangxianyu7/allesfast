@@ -66,6 +66,7 @@ from .flares.aflare import aflare1
 from .lightcurves import translate_limb_darkening_from_q_to_u as q_to_u
 # from .lightcurves import translate_limb_darkening_from_u_to_q as u_to_q
 from .star import StellarInputs, mist_chi2, sed_chi2, torres_constraints
+from .star.broadening import estimate_vmic, estimate_vmac
 
 
 
@@ -1145,13 +1146,20 @@ def rv_fct(params, inst, companion, xx=None, settings=None):
             inc = params[companion+'_incl']
             lambda_r = params['A_lambda']
             vsini = params['A_vsini']
-            zi = params['A_xi']
-            zeta = params['A_zeta']
+            # xi (vmic) and zeta (vmac): use fitted value if present in params,
+            # otherwise derive from empirical relations (Bruntt2010/GES, Doyle2014/GES)
+            _teff_rm = float(params.get('A_teff', 5500.0))
+            _mstar_rm = float(params.get('A_mstar', 1.0))
+            _rstar_rm = float(params.get('A_rstar', 1.0))
+            _feh_rm = float(params.get('A_feh', 0.0))
+            _logg_rm = float(np.log10(27420.011 * _mstar_rm / _rstar_rm**2))
+            zi   = params['A_xi']   if 'A_xi'   in params else estimate_vmic(_teff_rm, _logg_rm, _feh_rm)
+            zeta = params['A_zeta'] if 'A_zeta' in params else estimate_vmac(_teff_rm, _logg_rm, _feh_rm)
             ecc = params[companion+'_ecc']
             omega = np.rad2deg(np.mod( np.arctan2(params[companion+'_f_s'], params[companion+'_f_c']), 2*np.pi))
             q1, q2 = params['A_ldc_'+inst]
             u1 = 2*np.sqrt(q1)*q2; u2 = np.sqrt(q1)*(1-2*q2)
-            teff_val = params.get('A_teff', 5500.0)
+            teff_val = _teff_rm
             if len(time) == 0:
                 # print('Warning: no data points inside transit window for', inst, 'with parameters:', rr, ar, period, t0, inc, lambda_r, vsini, zi, zeta, ecc, omega, q1, q2, u1, u2)
                 pass  # no data inside transit window, rm stays zero

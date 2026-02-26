@@ -42,8 +42,8 @@ A_ldc_q2_HARPSW77,0.257,0,fixed,$q_{2;\rm HW77}$,,A_ldc_q2_HARPSjiang0,
 #RM stellar params
 A_lambda,2.62,1,uniform -180.0 180.0,$\lambda$,deg,,
 A_vsini,2.600,1,normal 2.600 0.500,$v\sin i$,km/s,,
-A_xi,1.6188,1,normal 1.619 0.500,$\xi$,km/s,,
-A_zeta,2.7299,1,normal 2.730 0.500,$\zeta$,km/s,,
+# A_xi and A_zeta are derived from (A_teff, logg, A_feh) via empirical relations
+# (Bruntt2010/GES for vmic, Doyle2014/GES for vmac) — no free parameters needed
 #star A stellar params
 A_rstar,0.9471,1,normal 0.9471 0.05,$R_A$,Rsun,,
 A_mstar,0.9031,1,normal 0.9031 0.05,$M_A$,Msun,,
