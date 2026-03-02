@@ -350,7 +350,7 @@ def mcmc_output(datadir, quiet=False):
     try: #some matplotlib versions cannot handle jpg
         fig.savefig( os.path.join(config.BASEMENT.outdir,'mcmc_chains.jpg'), bbox_inches='tight' )
     except:
-        fig.savefig( os.path.join(config.BASEMENT.outdir,'mcmc_chains.png'), bbox_inches='tight' )
+        fig.savefig( os.path.join(config.BASEMENT.outdir,'mcmc_chains.pdf'), bbox_inches='tight' )
     plt.close(fig)
 
 
@@ -404,13 +404,13 @@ def mcmc_output(datadir, quiet=False):
     try:
         _sed_file = config.BASEMENT.settings.get('sed_file', None)
         path = make_sed_plot(params_median, config.BASEMENT.datadir, config.BASEMENT.outdir,
-                             outfile='mcmc_sed_fit.png', sed_file=_sed_file)
+                             outfile='mcmc_sed_fit.pdf', sed_file=_sed_file)
         if path is not None:
             logprint('\nSaved', path)
     except Exception:
         pass
     try:
-        path = make_mist_plot(params_median, config.BASEMENT.outdir, outfile='mcmc_mist_track.png')
+        path = make_mist_plot(params_median, config.BASEMENT.outdir, outfile='mcmc_mist_track.pdf')
         if path is not None:
             logprint('\nSaved', path)
     except Exception:

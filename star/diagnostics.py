@@ -188,7 +188,7 @@ def _star_B_from_params(params):
 # Public plot functions
 # ---------------------------------------------------------------------------
 
-def make_sed_plot(params, datadir, outdir, outfile="stellar_sed_fit.png", errscale=1.0, sed_file=None):
+def make_sed_plot(params, datadir, outdir, outfile="stellar_sed_fit.pdf", errscale=1.0, sed_file=None):
     star_A = _star_from_params(params)
     if any(v is None for v in [star_A.teff, star_A.rstar, star_A.feh, star_A.av, star_A.distance, star_A.mstar]):
         return None
@@ -361,7 +361,7 @@ def make_sed_plot(params, datadir, outdir, outfile="stellar_sed_fit.png", errsca
     return path
 
 
-def make_mist_plot(params, outdir, outfile="stellar_mist_track.png"):
+def make_mist_plot(params, outdir, outfile="stellar_mist_track.pdf"):
     star_A = _star_from_params(params)
     if any(v is None for v in [star_A.eep, star_A.mstar, star_A.feh, star_A.teff, star_A.rstar]):
         return None

@@ -589,7 +589,7 @@ def _plot_mist_track(teffs, rstars, ages, eeps, mstar, feh, age, teff, rstar,
     ax.set_xlabel(r"$T_{\mathrm{eff}}$ (K)")
     ax.set_ylabel(r"$\log g_\star$ (cgs)")
 
-    outfile = outfile or "mist_track.png"
+    outfile = outfile or "mist_track.pdf"
     fig.tight_layout()
     fig.savefig(outfile, dpi=200, bbox_inches="tight")
     plt.close(fig)

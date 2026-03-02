@@ -289,14 +289,14 @@ def ns_output(datadir):
     #::: stellar diagnostic plots (SED + MIST)
     if config.BASEMENT.settings.get('use_sed_prior', False):
         try:
-            path = make_sed_plot(params_median, config.BASEMENT.datadir, config.BASEMENT.outdir, outfile='ns_sed_fit.png')
+            path = make_sed_plot(params_median, config.BASEMENT.datadir, config.BASEMENT.outdir, outfile='ns_sed_fit.pdf')
             if path is not None:
                 logprint('\nSaved', path)
         except:
             pass
     if config.BASEMENT.settings.get('use_mist_prior', False):
         try:
-            path = make_mist_plot(params_median, config.BASEMENT.outdir, outfile='ns_mist_track.png')
+            path = make_mist_plot(params_median, config.BASEMENT.outdir, outfile='ns_mist_track.pdf')
             if path is not None:
                 logprint('\nSaved', path)
         except:

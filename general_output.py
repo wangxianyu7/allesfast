@@ -624,6 +624,14 @@ def plot_1(ax, samples, inst, companion, style,
         baseline_median = calculate_baseline(params_median, inst, key) #evaluated on x (!)
         stellar_var_median = calculate_stellar_var(params_median, 'all', key, xx=x) #evaluated on x (!)
         y = base.data[inst][key] - baseline_median - stellar_var_median
+        #::: also subtract global RV trend (A_rv_slope/A_rv_quad) so phase-folded RV shows clean Keplerian
+        if inst in base.settings.get('inst_rv', []) or inst in base.settings.get('inst_rv2', []):
+            _slope = params_median.get('A_rv_slope', None)
+            _quad  = params_median.get('A_rv_quad',  None)
+            if _slope is not None or _quad is not None:
+                _dt = x - config.BASEMENT.rv_t0
+                if _slope is not None: y = y - _slope * _dt
+                if _quad  is not None: y = y - _quad  * _dt**2
         yerr_w = calculate_yerr_w(params_median, inst, key)
         
         #::: zoom?
@@ -1123,7 +1131,7 @@ def plot_initial_guess(return_figs=False, kwargs_dict=None):
         _sed_file = config.BASEMENT.settings.get('sed_file', None)
         try:
             path = make_sed_plot(params_median, config.BASEMENT.datadir, config.BASEMENT.outdir,
-                                 outfile='initial_guess_sed_fit.png', sed_file=_sed_file)
+                                 outfile='initial_guess_sed_fit.pdf', sed_file=_sed_file)
             if path is None:
                 logprint('\nSED plot skipped (missing params or SED file)')
             else:
@@ -1132,7 +1140,7 @@ def plot_initial_guess(return_figs=False, kwargs_dict=None):
             logprint(f'\nSED plot failed: {_e}')
         try:
             path = make_mist_plot(params_median, config.BASEMENT.outdir,
-                                  outfile='initial_guess_mist_track.png')
+                                  outfile='initial_guess_mist_track.pdf')
             if path is None:
                 logprint('\nMIST plot skipped (missing params)')
             else:

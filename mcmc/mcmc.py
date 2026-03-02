@@ -352,14 +352,14 @@ def _plot_de_fit(best_theta):
     _sed_file = config.BASEMENT.settings.get('sed_file', None)
     try:
         path = make_sed_plot(params_median, config.BASEMENT.datadir, outdir,
-                             outfile='optimized_sed_fit.png', sed_file=_sed_file)
+                             outfile='optimized_sed_fit.pdf', sed_file=_sed_file)
         if path:
             logprint(f"  Saved: {path}")
     except Exception as e:
         logprint(f"  WARNING: DE SED plot failed – {e}")
     try:
         path = make_mist_plot(params_median, outdir,
-                              outfile='optimized_mist_track.png')
+                              outfile='optimized_mist_track.pdf')
         if path:
             logprint(f"  Saved: {path}")
     except Exception as e:
