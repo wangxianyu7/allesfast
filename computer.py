@@ -279,6 +279,19 @@ def update_params(theta):
         
        
     #=========================================================================
+    #::: sv-parameterization: A_svsinicoslambda / A_svsinisinlambda → A_vsini / A_lambda
+    #::: mirrors EXOFASTv2: sv_c = sqrt(vsini)*cos(lam), sv_s = sqrt(vsini)*sin(lam)
+    #::: → vsini = sv_c² + sv_s²   (always ≥ 0)
+    #::: → lambda = atan2(sv_s, sv_c)  (well-defined for vsini > 0)
+    #=========================================================================
+    if params.get('A_svsinicoslambda') is not None:
+        _sc = params['A_svsinicoslambda']
+        _ss = params['A_svsinisinlambda']
+        params['A_vsini']  = _sc**2 + _ss**2
+        params['A_lambda'] = np.degrees(np.arctan2(_ss, _sc))
+
+
+    #=========================================================================
     #::: rsuma from Kepler's third law (when not a free parameter)
     #::: a^3 = G M_star P^2 / (4 pi^2)
     #::: rsuma = R_star * (1 + rr) / a
@@ -381,22 +394,34 @@ def update_params(theta):
     
     #=========================================================================
     #::: photometric errors, per instrument
+    #::: new EXOFASTv2-style: variance_flux (additive variance, can be negative)
+    #::: legacy:               ln_err_flux  (log of noise floor, always positive)
     #=========================================================================
     for inst in config.BASEMENT.settings['inst_phot']:
         key='flux'
-        params['err_'+key+'_'+inst] = np.exp( params['ln_err_'+key+'_'+inst] )
-        
-        
+        if params.get('variance_'+key+'_'+inst) is not None:
+            pass  # kept as-is; calculate_yerr_w reads variance_flux directly
+        else:
+            params['err_'+key+'_'+inst] = np.exp( params['ln_err_'+key+'_'+inst] )
+
     #=========================================================================
     #::: RV jitter, per instrument
+    #::: new EXOFASTv2-style: jittervar_rv (additive variance in km²/s², can be negative)
+    #::: legacy:               ln_jitter_rv (log of jitter in km/s, always positive)
     #=========================================================================
     for inst in config.BASEMENT.settings['inst_rv']:
         key='rv'
-        params['jitter_'+key+'_'+inst] = np.exp( params['ln_jitter_'+key+'_'+inst] )
-        
+        if params.get('jittervar_'+key+'_'+inst) is not None:
+            pass  # kept as-is; calculate_yerr_w reads jittervar_rv directly
+        else:
+            params['jitter_'+key+'_'+inst] = np.exp( params['ln_jitter_'+key+'_'+inst] )
+
     for inst in config.BASEMENT.settings['inst_rv2']:
         key='rv2'
-        params['jitter_'+key+'_'+inst] = np.exp( params['ln_jitter_'+key+'_'+inst] )
+        if params.get('jittervar_'+key+'_'+inst) is not None:
+            pass
+        else:
+            params['jitter_'+key+'_'+inst] = np.exp( params['ln_jitter_'+key+'_'+inst] )
         
         
     #=========================================================================
@@ -1218,6 +1243,14 @@ def calculate_external_priors(params):
             if val is not None and ref is not None and np.isfinite(float(val)) and np.isfinite(float(ref)):
                 lnp -= 0.5 * ((float(val) - float(ref)) / tol) ** 2
 
+    #::: Gaussian prior on derived vsini (from sv-parameterization)
+    #    Prior defined by non-fit A_vsini row with 'normal mean std' bounds in params.csv
+    if getattr(config.BASEMENT, 'vsini_prior', None) is not None:
+        _vsini = params.get('A_vsini')
+        if _vsini is not None:
+            _mu, _sigma = config.BASEMENT.vsini_prior
+            lnp += -0.5 * ((_vsini - _mu) / _sigma)**2 - np.log(_sigma * np.sqrt(2*np.pi))
+
     #::: TTV linear-ephemeris prior
     if config.BASEMENT.settings.get('use_ttv_prior', False):
         for _comp, (_T_obs, _sigma) in config.BASEMENT.ttv_data.items():
@@ -1474,12 +1507,14 @@ def calculate_lnlike_total(params):
                 
                 #::: calculate errors, baseline and stellar variability
                 yerr_w = calculate_yerr_w(params, inst, key)
+                if np.any(yerr_w <= 0.):  # σ_total² ≤ 0 (invalid jittervar/variance)
+                    return -np.inf
                 baseline = calculate_baseline(params, inst, key, model=model, yerr_w=yerr_w)
                 stellar_var = calculate_stellar_var(params, inst, key, model=model, baseline=baseline, yerr_w=yerr_w)
-                
+
                 #::: calculate residuals and inv_simga2
                 residuals = config.BASEMENT.data[inst][key] - model - baseline - stellar_var
-                if any(np.isnan(residuals)): 
+                if any(np.isnan(residuals)):
                     return -np.inf
                 inv_sigma2_w = 1./yerr_w**2
                 
@@ -1675,9 +1710,29 @@ def calculate_yerr_w(params, inst, key):
         the weighted yerr
     '''
     if inst in config.BASEMENT.settings['inst_phot']:
-        yerr_w = config.BASEMENT.data[inst]['err_scales_'+key] * params['err_'+key+'_'+inst]
+        if params.get('variance_'+key+'_'+inst) is not None:
+            # EXOFASTv2-style: σ_total² = σ_measured² + variance  (variance can be negative)
+            # invalid if any point has σ_total² ≤ 0 → return zeros → caller returns -inf
+            var = params['variance_'+key+'_'+inst]
+            sigma2 = config.BASEMENT.data[inst]['white_noise_'+key]**2 + var
+            if np.any(sigma2 <= 0.):
+                return np.zeros(len(sigma2))
+            yerr_w = np.sqrt(sigma2)
+        else:
+            # legacy: multiplicative error-scaling model
+            yerr_w = config.BASEMENT.data[inst]['err_scales_'+key] * params['err_'+key+'_'+inst]
     elif (inst in config.BASEMENT.settings['inst_rv']) or (inst in config.BASEMENT.settings['inst_rv2']):
-        yerr_w = np.sqrt( config.BASEMENT.data[inst]['white_noise_'+key]**2 + params['jitter_'+key+'_'+inst]**2 )
+        if params.get('jittervar_'+key+'_'+inst) is not None:
+            # EXOFASTv2-style: σ_total² = σ_w² + jittervar  (jittervar can be negative)
+            # invalid if any point has σ_total² ≤ 0 → return zeros → caller returns -inf
+            jittervar = params['jittervar_'+key+'_'+inst]
+            sigma2 = config.BASEMENT.data[inst]['white_noise_'+key]**2 + jittervar
+            if np.any(sigma2 <= 0.):
+                return np.zeros(len(sigma2))
+            yerr_w = np.sqrt(sigma2)
+        else:
+            # legacy: additive jitter (always positive)
+            yerr_w = np.sqrt( config.BASEMENT.data[inst]['white_noise_'+key]**2 + params['jitter_'+key+'_'+inst]**2 )
     return yerr_w
 
 

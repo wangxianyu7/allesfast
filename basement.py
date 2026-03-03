@@ -841,6 +841,8 @@ class Basement():
                 validate('A_heat_'+inst, None, -np.inf, np.inf)
                 validate('A_lambda', None, -np.inf, np.inf)
                 validate('A_vsini', None, -np.inf, np.inf)
+                validate('A_svsinicoslambda', None, -np.inf, np.inf)
+                validate('A_svsinisinlambda', None, -np.inf, np.inf)
                 
                 validate(companion+'_gdc_'+inst, None, 0., 1.)
                 validate(companion+'_rotfac_'+inst, 1., 0., np.inf)
@@ -998,7 +1000,21 @@ class Basement():
     
         self.ndim = len(self.theta_0)                   #len(ndim)
 
-    
+        #==========================================================================
+        #::: vsini Gaussian prior — read from non-fit A_vsini row with normal bounds
+        #    (used when sampling in sv-space: A_svsinicoslambda / A_svsinisinlambda)
+        #==========================================================================
+        self.vsini_prior = None
+        _all_names  = np.atleast_1d(buf['name'])
+        _all_fits   = np.atleast_1d(buf['fit'])
+        _all_bounds = np.atleast_1d(buf['bounds'])
+        _vi = np.where((_all_names == 'A_vsini') & (_all_fits == 0))[0]
+        if len(_vi) > 0:
+            _bnd = str(_all_bounds[_vi[0]]).split()
+            if len(_bnd) >= 3 and _bnd[0] == 'normal':
+                self.vsini_prior = (float(_bnd[1]), float(_bnd[2]))
+
+
         #==========================================================================
         #::: luser proof: check if all initial guesses lie within their bounds
         #==========================================================================
@@ -1006,7 +1022,11 @@ class Basement():
         for th, b, key in zip(self.theta_0, self.bounds, self.fitkeys):
                   
             #:::: test bounds
-            if (b[0] == 'uniform') and not (b[1] <= th <= b[2]): 
+            #    epoch params are skipped here: change_epoch() will shift both theta_0
+            #    and bounds after load_params() returns, so we must not check them now
+            if key.endswith('_epoch'):
+                continue
+            if (b[0] == 'uniform') and not (b[1] <= th <= b[2]):
                 raise ValueError('The initial guess for '+key+' lies outside of its bounds.')
                 
             elif (b[0] == 'normal') and ( np.abs(th - b[1]) > 3*b[2] ):
@@ -1106,14 +1126,16 @@ class Basement():
                           'time':time,
                           'flux':flux,
                           'err_scales_flux':flux_err/np.nanmean(flux_err),
+                          'white_noise_flux':flux_err,
                           'custom_series':custom_series
                          }
-            if (self.settings['fast_fit']) and (len(self.settings['inst_phot'])>0): 
+            if (self.settings['fast_fit']) and (len(self.settings['inst_phot'])>0):
                 time, flux, flux_err, custom_series = self.reduce_phot_data(time, flux, flux_err, custom_series=custom_series, inst=inst)
             self.data[inst] = {
                           'time':time,
                           'flux':flux,
                           'err_scales_flux':flux_err/np.nanmean(flux_err),
+                          'white_noise_flux':flux_err,
                           'custom_series':custom_series
                          }
             

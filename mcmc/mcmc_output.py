@@ -422,9 +422,43 @@ def mcmc_output(datadir, quiet=False):
         plot_ttv_results(params_median, params_ll, params_ul)
         
         
+    #::: save params_best.csv — original params.csv with value column set to max-likelihood sample
+    #    (copy to params.csv to restart MCMC from the best-fit point)
+    try:
+        _ml_dic = draw_mcmc_posterior_samples_at_maximum_likelihood(reader, as_type='dic')
+        _params_ml = {k: float(v[0]) for k, v in _ml_dic.items()}
+        _src = os.path.join(config.BASEMENT.datadir, 'params.csv')
+        _dst = os.path.join(config.BASEMENT.outdir, 'params_best.csv')
+        _out_lines = []
+        with open(_src, 'r') as _f:
+            for _line in _f:
+                _stripped = _line.rstrip('\n')
+                if _stripped.startswith('#') or _stripped.strip() == '':
+                    _out_lines.append(_stripped)
+                    continue
+                _cols = _stripped.split(',')
+                _name = _cols[0].strip()
+                _fit_flag = _cols[2].strip() if len(_cols) > 2 else '0'
+                if _fit_flag == '1' and _name in _params_ml:
+                    _val = _params_ml[_name]
+                    _cols[1] = '{:.10g}'.format(_val)
+                    # for epoch params, tighten bounds to value ±0.1 so that
+                    # load_params() passes the bounds check on next run
+                    if _name.endswith('_epoch') and len(_cols) > 3:
+                        _bnd = _cols[3].strip().split()
+                        if _bnd[0] == 'uniform':
+                            _cols[3] = 'uniform {:.10g} {:.10g}'.format(_val - 0.1, _val + 0.1)
+                _out_lines.append(','.join(_cols))
+        with open(_dst, 'w') as _f:
+            _f.write('\n'.join(_out_lines) + '\n')
+        logprint('\nSaved params_best.csv to', _dst)
+    except Exception as _e:
+        logprint('\nCould not save params_best.csv:', _e)
+
+
     #::: clean up and delete the tmp file
     os.remove(os.path.join(config.BASEMENT.outdir,'mcmc_save_tmp.h5'))
-    
+
     logprint('\nDone. For all outputs, see', config.BASEMENT.outdir, '\n')
     
     
