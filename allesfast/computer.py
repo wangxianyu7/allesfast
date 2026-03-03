@@ -1330,7 +1330,7 @@ def calculate_external_priors(params):
         # star B, etc.  Falls back to the global sed_errscale setting (default
         # 1.0) for any star without an explicit param entry.
         # For blended bands, star[0]'s errscale is used (EXOFASTv2 convention).
-        _default_errscale = config.BASEMENT.settings.get('sed_errscale', 1.0)
+        _default_errscale = float(config.BASEMENT.settings.get('sed_errscale', 1.0))
         _star_letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
         _errscale = np.array([
             params.get(f'{_star_letters[j]}_sed_errscale', _default_errscale)

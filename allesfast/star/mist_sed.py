@@ -125,7 +125,7 @@ def sed_chi2(
             av_arr,
             distance_arr,
             lstar_arr,
-            float(cfg.get("errscale", 1.0)),
+            cfg.get("errscale", 1.0),
             sed_file,
             sed_data=sed_data,
         )
