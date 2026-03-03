@@ -471,9 +471,17 @@ def derive(samples, mode):
     for companion in config.BASEMENT.settings['companions_phot']:
         try: derived_samples['combined_A_density'] = np.append(derived_samples['combined_A_density'], derived_samples[companion+'_A_density'])
         except: pass
-    
 
-    
+    #==========================================================================
+    #::: sv-parameterization: derive vsini and lambda per sample
+    #==========================================================================
+    if ('A_svsinicoslambda' in config.BASEMENT.fitkeys) and ('A_svsinisinlambda' in config.BASEMENT.fitkeys):
+        _sc = get_params('A_svsinicoslambda')
+        _ss = get_params('A_svsinisinlambda')
+        derived_samples['A_vsini']  = _sc**2 + _ss**2
+        derived_samples['A_lambda'] = np.degrees(np.arctan2(_ss, _sc))
+
+
     ###############################################################################
     #::: write keys for output
     ###############################################################################
@@ -609,8 +617,16 @@ def derive(samples, mode):
         
     names.append( 'combined_A_density' )
     labels.append( 'Combined host density from all orbits; $rho_\mathrm{\star; combined}$ (cgs)' )
-        
-            
+
+    if 'A_vsini' in derived_samples:
+        names.append( 'A_vsini' )
+        labels.append( r'Projected stellar rotation; $v \sin i_\star$ (km/s)' )
+
+    if 'A_lambda' in derived_samples:
+        names.append( 'A_lambda' )
+        labels.append( r'Spin-orbit angle; $\lambda$ (deg)' )
+
+
     ###############################################################################
     #::: delete pointless values
     ###############################################################################

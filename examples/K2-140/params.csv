@@ -1,62 +1,48 @@
 #name,value,fit,bounds,label,unit
-#companion b astrophysical params,,,,,
-b_rr,0.117,1,uniform 0.0 1.0,$R_b / R_\star$,
-b_rsuma,0.07461507491495965,0,fixed,$(R_\star + R_b) / a_b$,
-b_cosi,0.0,1,uniform 0.0 1.0,$\cos{i_b}$,
-b_epoch,2458435.713800,1,uniform 2458434.713800 2458436.713800,$T_{0;b}$,$\mathrm{BJD}$
-b_period,6.56919,1,uniform 5.56918800 7.56918800,$P_{b}$,$\mathrm{d}$
-b_K,0.104,1,uniform 0.0 1,$K_b$,$\mathrm{km/s}$
-b_f_c,0.0,1,uniform -1.0 1.0,$\sqrt{e_b} \cos{\omega_b}$,
-b_f_s,0.0,1,uniform -1.0 1.0,$\sqrt{e_b} \sin{\omega_b}$,
-#dilution per instrument,,,,,
-
-#limb darkening coefficients per instrument,,,,,
-A_ldc_q1_K2,0.5,1,uniform 0.0 1.0,$q_{1; \mathrm{K2}}$,
-A_ldc_q2_K2,0.5,1,uniform 0.0 1.0,$q_{2; \mathrm{K2}}$,
-A_ldc_q1_Keck,0.5,1,uniform 0.0 1.0,$q_{1; \mathrm{Keck}}$,
-A_ldc_q2_Keck,0.5,1,uniform 0.0 1.0,$q_{2; \mathrm{Keck}}$,
-#surface brightness per instrument and companion,,,,,
-
-#albedo per instrument and companion,,,,,
-A_geom_albedo_K2,0.0,0,trunc_normal 0 1 0.0 0.0,$A_{\mathrm{geom}; host; \mathrm{K2}}$,
-A_geom_albedo_CORALIE,0.0,0,trunc_normal 0 1 0.0 0.0,$A_{\mathrm{geom}; host; \mathrm{CORALIE}}$,
-A_geom_albedo_Keck,0.0,0,trunc_normal 0 1 0.0 0.0,$A_{\mathrm{geom}; host; \mathrm{Keck}}$,
-#spots per instrument and companion,,,,,
-#errors per instrument,
-ln_err_flux_K2,-7.0,1,uniform -15.0 0.0,$\ln{\sigma_\mathrm{K2}}$,$\ln{ \mathrm{rel. flux.} }$
-ln_jitter_rv_FIES,-3.0,0,uniform -15.0 0.0,$\ln{\sigma_\mathrm{jitter; FIES}}$,$\ln{ \mathrm{km/s} }$
-ln_jitter_rv_CORALIE,-3.0,1,uniform -15.0 0.0,$\ln{\sigma_\mathrm{jitter; CORALIE}}$,$\ln{ \mathrm{km/s} }$
-ln_jitter_rv_HARPS,-3.0,0,uniform -15.0 0.0,$\ln{\sigma_\mathrm{jitter; HARPS}}$,$\ln{ \mathrm{km/s} }$
-ln_jitter_rv_Keck,-3.0,1,uniform -15.0 0.0,$\ln{\sigma_\mathrm{jitter; Keck}}$,$\ln{ \mathrm{km/s} }$
-#baseline per instrument,
-
-
-A_lambda,0,1,uniform -180 180,$hostlambda_\mathrm{K2-140}$,$degree$
-A_vsini,10,1,uniform 0 20,$v \sin i_\star$,km/s
-
-A_xi,2,1,normal 2 1,$A_xi$,$ \mathrm{km/s}$
-A_zeta,4,1,normal 4 1,$A_zeta$,$ \mathrm{km/s}$
-
-#baseline_quad_rv_CORALIE,0,1,uniform -10 10,quad_CORALIE,
-#baseline_slope_rv_CORALIE,0,1,uniform -10 10,slope_CORALIE,
-#baseline_offset_rv_CORALIE,1.1,1,uniform -10 10,offset_CORALIE,
-
-#stellar parameters (migrated from params_star.csv),,,,,
-A_rstar,1.02,1,uniform 0.1 20,$R_\star$,$R_\odot$
-A_rstar_lerr,0.06,0,fixed,$\sigma^{-}_{R_\star}$,$R_\odot$
-A_rstar_uerr,0.07,0,fixed,$\sigma^{+}_{R_\star}$,$R_\odot$
-A_mstar,1.02,1,uniform 0.1 10,$M_\star$,$M_\odot$
-A_mstar_lerr,0.04,0,fixed,$\sigma^{-}_{M_\star}$,$M_\odot$
-A_mstar_uerr,0.06,0,fixed,$\sigma^{+}_{M_\star}$,$M_\odot$
-A_teff,5712.000000,1,uniform 3500 50000,$T_{\rm eff}$,K
-A_teff_lerr,76,0,fixed,$\sigma^{-}_{T_{\mathrm{eff}}}$,$\mathrm{K}$
-A_teff_uerr,83,0,fixed,$\sigma^{+}_{T_{\mathrm{eff}}}$,$\mathrm{K}$
-#stellar and orbital priors from .priors file
-A_feh,0.1,1,normal 0.1 0.1,$[\rm Fe/H]$,dex
-A_parallax,2.8748,1,normal 2.8748 0.01887,$\varpi$,mas
-#limb darkening (auto-added by settings2allesfitter)
-A_ldc_q1_CORALIE,0.5,0,uniform 0.0 1.0,$q_{1; CORALIE}$,
-A_ldc_q2_CORALIE,0.5,0,uniform 0.0 1.0,$q_{2; CORALIE}$,
-#stellar and orbital priors from .priors file
-A_av,0,1,uniform 0 0.107221,$A_V$,mag
-A_eep,300,1,uniform 1 808,$\rm EEP$,
+#companion b astrophysical params
+b_rr,0.1170426535,1,uniform 0.0 0.3,Rp/Rs,
+b_rsuma,0.08377452855,1,uniform 0.0 0.2,(Rs+Rp)/a,
+b_cosi,0.03934941426,1,uniform 0.0 1.0,cos_i,
+b_epoch,2457588.2850899999,1,uniform 2457587.2850899999 2457589.2850899999,T0_b,BJD
+b_period,6.569188,1,uniform 6.469188 6.669188,P_b,d
+b_K,0.11900449,1,uniform 0.0 2.0,K_b,km/s
+b_f_c,-0.1497764329,1,uniform -1.0 1.0,sqrt_e_cosw,
+b_f_s,-0.2355520872,1,uniform -1.0 1.0,sqrt_e_sinw,
+#RM params
+A_svsinicoslambda,1.6620398,1,uniform -10.0 10.0,sv_coslam,km/s^0.5
+A_svsinisinlambda,-0.18505071,1,uniform -10.0 10.0,sv_sinlam,km/s^0.5
+A_vsini,3.60,0,normal 3.60 1.00,vsini,km/s
+#limb darkening coefficients per instrument
+A_ldc_q1_K2,0.52503793,1,uniform 0.0 1.0,q1_K2,
+A_ldc_q2_K2,0.34628461,1,uniform 0.0 1.0,q2_K2,
+A_ldc_q1_TESS120,0.36970237,1,uniform 0.0 1.0,q1_TESS120,
+A_ldc_q2_TESS120,0.31219617,1,uniform 0.0 1.0,q2_TESS120,
+A_ldc_q1_HIRES,0.52872957,1,uniform 0.0 1.0,q1_HIRES,
+A_ldc_q2_HIRES,0.43124994,1,uniform 0.0 1.0,q2_HIRES,
+#gamma offsets [km/s] (absolute instruments: init=gamma, bounds+-5 km/s)
+baseline_offset_rv_CORALIE,1.2141303,1,uniform -3.7859 6.2141,gamma_CORALIE,km/s
+baseline_offset_rv_FIES,1.1204026,1,uniform -3.8796 6.1204,gamma_FIES,km/s
+baseline_offset_rv_HARPS,1.236812,1,uniform -3.7632 6.2368,gamma_HARPS,km/s
+#HIRES: zero-centred RM
+baseline_offset_rv_HIRES,0.002134658,1,uniform -0.5 0.5,gamma_HIRES,km/s
+#baseline offsets (photometry)
+baseline_offset_flux_TESS120,0.0,1,uniform -0.1 0.1,offset_TESS120,
+#noise (EXOFASTv2-style additive variance)
+#bounds: lower = -min(sigma^2_data) to avoid sigma^2_total<=0 in DE
+variance_flux_K2,-6.869954e-06,1,uniform -6.88e-06 1e-04,var_K2,relflux2
+variance_flux_TESS120,-1.060583e-06,1,uniform -1.12e-05 1e-04,var_TESS120,relflux2
+#jittervar in km^2/s^2 (can be negative: corrects over-estimated errors)
+#CORALIE lower = -min(sigma^2_rv_CORALIE) = -4.77e-4
+jittervar_rv_CORALIE,-4.191622e-04,1,uniform -4.8e-04 1e-02,jvar_CORALIE,km2/s2
+jittervar_rv_FIES,2.314615e-04,1,uniform -1 1,jvar_FIES,km2/s2
+jittervar_rv_HARPS,1.919508e-04,1,uniform -1 1,jvar_HARPS,km2/s2
+jittervar_rv_HIRES,4.261426e-05,1,uniform -1 1,jvar_HIRES,km2/s2
+#stellar parameters
+A_rstar,1.095663874,1,normal 1.09566 0.05,R_star,Rsun
+A_mstar,0.9685189483,1,normal 0.968519 0.05,M_star,Msun
+A_teff,5585.0,1,normal 5585.0 134.04,Teff,K
+A_feh,0.500,1,normal 0.500 0.080,feh,dex
+A_eep,412.098,1,uniform 200.0 500.0,EEP,
+A_av,0.072717838,1,uniform 0.0 1.0,Av,mag
+A_parallax,2.90062,1,normal 2.90062 0.01887,parallax,mas
+A_age,10.47,1,uniform 0.1 14.0,age,Gyr

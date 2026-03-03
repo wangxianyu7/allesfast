@@ -978,11 +978,15 @@ def save_table(samples, mode):
         f.write('#name,median,lower_error,upper_error,label,unit\n')
         f.write('#Fitted parameters,,,\n')
         for i, key in enumerate(config.BASEMENT.allkeys):
+            # A_vsini with fit=0 is a prior placeholder for sv-parameterization;
+            # skip it here since its posterior will appear in the derived table
+            if key == 'A_vsini' and 'A_svsinicoslambda' in config.BASEMENT.fitkeys:
+                continue
             if key not in config.BASEMENT.fitkeys:
                 f.write(key + ',' + str(params[key]) + ',' + '(fixed),(fixed),'+config.BASEMENT.labels[i]+','+config.BASEMENT.units[i]+'\n')
             else:
                 f.write(key + ',' + str(params[key]) + ',' + str(params_ll[key]) + ',' + str(params_ul[key]) + ',' + config.BASEMENT.labels[i] + ',' + config.BASEMENT.units[i] + '\n' )
-   
+
         
         
 ###############################################################################
@@ -1009,7 +1013,11 @@ def save_latex_table(samples, mode):
         f.write('\\hline \n')
         
         for i, key in enumerate(config.BASEMENT.allkeys):
-            if key not in config.BASEMENT.fitkeys:                
+            # A_vsini with fit=0 is a prior placeholder for sv-parameterization;
+            # skip it here since its posterior will appear in the derived table
+            if key == 'A_vsini' and 'A_svsinicoslambda' in config.BASEMENT.fitkeys:
+                continue
+            if key not in config.BASEMENT.fitkeys:
                 value = str(params_median[key])
                 f.write(config.BASEMENT.labels[i] + ' & $' + value + '$ & '  + config.BASEMENT.units[i] + '& fixed \\\\ \n')            
                 simplename = key.replace("_", "").replace("/", "over").replace("(", "").replace(")", "").replace("1", "one").replace("2", "two").replace("3", "three")
