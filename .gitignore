@@ -6,3 +6,4 @@ references/
 profiling/
 examples/
 docs/
+.pytest_cache

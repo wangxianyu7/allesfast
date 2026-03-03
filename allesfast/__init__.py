@@ -75,7 +75,8 @@ from .lightcurves import translate_limb_darkening_from_u_to_q as u_to_q
 
 def GUI():
     allesfast_path = os.path.dirname( os.path.realpath(__file__) )
-    os.system( 'jupyter notebook "' + os.path.join(allesfast_path,'GUI.ipynb') + '"' )
+    gui_path = os.path.join(os.path.dirname(allesfast_path), 'GUI.ipynb')
+    os.system( 'jupyter notebook "' + gui_path + '"' )
 
         
 
