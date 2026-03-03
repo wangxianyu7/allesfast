@@ -231,7 +231,14 @@ def run_de_optimization(s):
         for _, best_fit in de(ngen):
             ngen_done += 1
             if bar is not None:
-                bar.set_postfix(lnprob=f'{-best_fit:.4f}', dlnp=f'{np.ptp(de._fitness):.4f}')
+                _fit = de._fitness
+                _fin = _fit[np.isfinite(_fit)]
+                _dlnp = np.ptp(_fin) if len(_fin) > 1 else np.inf
+                _n_inf = len(_fit) - len(_fin)
+                _postfix = dict(lnprob=f'{-best_fit:.4f}', dlnp=f'{_dlnp:.4f}')
+                if _n_inf > 0:
+                    _postfix['n_inf'] = _n_inf
+                bar.set_postfix(**_postfix)
                 bar.update(1)
         if bar is not None:
             bar.close()
@@ -244,9 +251,13 @@ def run_de_optimization(s):
 
     best = de.minimum_location          # best parameter vector
     best_lnprob = -de.minimum_value     # DiffEvol stores -lnprob internally
-    delta_lnprob = np.ptp(de._fitness)    # spread of lnprob across final population
+    n_inf = np.sum(~np.isfinite(de._fitness))
+    delta_lnprob = np.ptp(de._fitness[np.isfinite(de._fitness)]) if n_inf < len(de._fitness) else np.inf
     logprint(f"  DE best lnprob : {best_lnprob:.4f}")
     logprint(f"  DE Δlnprob     : {delta_lnprob:.4f}  (population spread; smaller → more converged)")
+    if n_inf > 0:
+        logprint(f"  WARNING: {n_inf}/{len(de._fitness)} DE members have lnprob=-inf "
+                 f"(stuck in invalid region; check jittervar/variance bounds)")
 
     _save_de_results(de)
 
