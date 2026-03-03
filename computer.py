@@ -1315,11 +1315,15 @@ def calculate_external_priors(params):
         sed_file = config.BASEMENT.settings.get('sed_file', None)
         if sed_file is not None and not os.path.isabs(sed_file):
             sed_file = os.path.join(config.BASEMENT.datadir, sed_file)
+        # errscale: prefer fitted A_sed_errscale (like EXOFASTv2 which always
+        # fits errscale when SED is used), fall back to settings for compat.
+        _errscale = params.get('A_sed_errscale',
+                               config.BASEMENT.settings.get('sed_errscale', 1.0))
         chi2 = sed_chi2(
             stars,
             sed_file=sed_file,
             sed_data=config.BASEMENT.sed_data,
-            config={'errscale': config.BASEMENT.settings.get('sed_errscale', 1.0)},
+            config={'errscale': _errscale},
         )
         if np.isfinite(chi2):
             lnp += -0.5 * chi2

@@ -38,6 +38,8 @@ jittervar_rv_FIES,2.314615e-04,1,uniform -1 1,jvar_FIES,km2/s2
 jittervar_rv_HARPS,1.919508e-04,1,uniform -1 1,jvar_HARPS,km2/s2
 jittervar_rv_HIRES,4.261426e-05,1,uniform -1 1,jvar_HIRES,km2/s2
 #stellar parameters
+#SED error scale (free, like EXOFASTv2; bounds 0.01-100)
+A_sed_errscale,0.5355477447,1,uniform 0.01 100,errscale_SED,
 A_rstar,1.095663874,1,normal 1.09566 0.05,R_star,Rsun
 A_mstar,0.9685189483,1,normal 0.968519 0.05,M_star,Msun
 A_teff,5585.0,1,normal 5585.0 134.04,Teff,K

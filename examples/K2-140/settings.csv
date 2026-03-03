@@ -18,7 +18,6 @@ shift_epoch,True
 inst_for_b_epoch,all
 use_mist_prior,True
 use_sed_prior,True
-sed_errscale,0.5355477447
 sed_file,380255458.sed
 t_exp_K2,0.0204439
 t_exp_n_int_K2,1
