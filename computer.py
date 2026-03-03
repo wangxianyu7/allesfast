@@ -1281,19 +1281,30 @@ def calculate_external_priors(params):
     )
     stars = [star_A]
 
-    #::: build star B if B_* params are present (binary system)
-    if params.get('B_rstar') is not None:
-        star_B = StellarInputs(
-            teff=params.get('B_teff', None),
-            rstar=params.get('B_rstar', None),
-            mstar=params.get('B_mstar', None),
-            eep=params.get('B_eep', None),
-            age=params.get('B_age', None),
-            feh=params.get('B_feh', None),    # coupled → A_feh via coupled_with
-            av=params.get('A_av', None),
-            distance=_distance,
-        )
-        stars.append(star_B)
+    #::: build additional stars (B, C, D, ...) if present
+    for _letter in 'BCDEFGHIJKLMNOPQRSTUVWXYZ':
+        if params.get(f'{_letter}_rstar') is None:
+            break
+        # Resolve per-star distance; fall back to star A's distance if not set.
+        # Coupling (e.g. B_parallax coupled_with A_parallax) is already resolved
+        # in params, so params.get('B_parallax') returns the A value when coupled.
+        _x_distance = params.get(f'{_letter}_distance', None)
+        if _x_distance is None:
+            _x_parallax = params.get(f'{_letter}_parallax', None)
+            if _x_parallax is not None and _x_parallax > 0:
+                _x_distance = 1000.0 / _x_parallax
+            else:
+                _x_distance = _distance  # fall back to star A
+        stars.append(StellarInputs(
+            teff=params.get(f'{_letter}_teff', None),
+            rstar=params.get(f'{_letter}_rstar', None),
+            mstar=params.get(f'{_letter}_mstar', None),
+            eep=params.get(f'{_letter}_eep', None),
+            age=params.get(f'{_letter}_age', None),
+            feh=params.get(f'{_letter}_feh', None),
+            av=params.get(f'{_letter}_av', None),
+            distance=_x_distance,
+        ))
 
     if config.BASEMENT.settings.get('use_mist_prior', False):
         chi2 = mist_chi2(
