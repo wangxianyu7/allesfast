@@ -1,69 +1,45 @@
 #name,value
-###############################################################################,
-# General settings,
-###############################################################################,
+multiprocess,True
 companions_phot,b
 companions_rv,b
-inst_phot,K2
-inst_rv,CORALIE Keck
-###############################################################################,
-# Fit performance settings,
-###############################################################################,
-multiprocess,True
-multiprocess_cores,all
-fast_fit,True
-fast_fit_width,0.3333333333333333
-secondary_eclipse,False
-phase_curve,False
-shift_epoch,True
-inst_for_b_epoch,all
-###############################################################################,
-# MCMC settings,
-###############################################################################,
-mcmc_nwalkers,56  # 2 x 28 free params
+inst_phot,K2 TESS120
+inst_rv,CORALIE FIES HARPS HIRES
+mcmc_sampler,demcpt
 mcmc_total_steps,20000
-mcmc_thin_by,10
+mcmc_nwalkers,64
 mcmc_ntemps,8
+mcmc_thin_by,10
 mcmc_maxgr,1.01
 mcmc_mintz,1000
-
-###############################################################################,
-# Limb darkening law per object and instrument,
-###############################################################################,
-A_ld_law_K2,quad
-A_ld_law_Keck,quad
-###############################################################################,
-# Baseline settings per instrument,
-###############################################################################,
-baseline_flux_K2,hybrid_offset
-baseline_rv_CORALIE,hybrid_offset
-baseline_rv_Keck,hybrid_offset
-###############################################################################,
-# Error settings per instrument,
-###############################################################################,
-error_flux_K2,sample
-error_rv_CORALIE,sample
-error_rv_Keck,sample
-###############################################################################,
-# Exposure times for interpolation (days),
-###############################################################################,
-t_exp_K2,0.0204317500
-###############################################################################,
-# Number of points for exposure interpolation,
-###############################################################################,
-t_exp_n_int_K2,15
-###############################################################################,
-# Stellar model priors,
-###############################################################################,
+de_ngen,20000
+fast_fit,True
+fast_fit_width,0.333333
+shift_epoch,True
+inst_for_b_epoch,all
 use_mist_prior,True
 use_sed_prior,True
+sed_errscale,0.5355477447
 sed_file,380255458.sed
-###############################################################################,
-# Flux weighted RVs per object and instrument,
-###############################################################################,
-b_flux_weighted_Keck,True
-#t_exp_n_int_Keck,10
-#t_exp_Keck,0.0130910003
-mcmc_sampler,demcpt
+t_exp_K2,0.0204439
+t_exp_n_int_K2,1
+t_exp_TESS120,0.0013889
+t_exp_n_int_TESS120,1
+t_exp_HIRES,0.0069444
+t_exp_n_int_HIRES,1
+A_ld_law_K2,quad
+A_ld_law_TESS120,quad
+A_ld_law_HIRES,quad
+b_flux_weighted_HIRES,50000
+baseline_flux_K2,hybrid_offset
+baseline_flux_TESS120,sample_offset
+baseline_rv_CORALIE,sample_offset
+baseline_rv_FIES,sample_offset
+baseline_rv_HARPS,sample_offset
+baseline_rv_HIRES,sample_offset
+error_flux_K2,sample
+error_flux_TESS120,sample
+error_rv_CORALIE,sample
+error_rv_FIES,sample
+error_rv_HARPS,sample
+error_rv_HIRES,sample
 cornerplot,False
-de_ngen,10000
