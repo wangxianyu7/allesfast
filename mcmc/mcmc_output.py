@@ -96,31 +96,40 @@ def draw_mcmc_posterior_samples_at_maximum_likelihood(sampler, as_type='1d_array
 #::: plot the MCMC chains
 ###############################################################################
 def plot_MCMC_chains(sampler):
-    
+
     chain = sampler.get_chain()
     log_prob = sampler.get_log_prob()
-    
-    #plot chains; emcee_3.0.0 format = (nsteps, nwalkers, nparameters)
-    fig, axes = plt.subplots(config.BASEMENT.ndim+1, 1, figsize=(6,3*config.BASEMENT.ndim) )
-    
-    #::: plot the lnprob_values; emcee_3.0.0 format = (nsteps, nwalkers)
-    axes[0].plot(log_prob, '-', rasterized=True)
-    axes[0].axvline( 1.*config.BASEMENT.settings['mcmc_burn_steps']/config.BASEMENT.settings['mcmc_thin_by'], color='k', linestyle='--' )
-    mini = np.min(log_prob[int(1.*config.BASEMENT.settings['mcmc_burn_steps']/config.BASEMENT.settings['mcmc_thin_by']):,:])
-    maxi = np.max(log_prob[int(1.*config.BASEMENT.settings['mcmc_burn_steps']/config.BASEMENT.settings['mcmc_thin_by']):,:])
-    axes[0].set( title='lnprob', xlabel='steps', rasterized=True,
-                 ylim=[mini, maxi] )
-    axes[0].xaxis.set_major_locator(FixedLocator(axes[0].get_xticks())) #useless line to bypass useless matplotlib warnings
-    axes[0].set_xticklabels( [int(label) for label in axes[0].get_xticks()*config.BASEMENT.settings['mcmc_thin_by']] )
-    
-    #:::plot all chains of parameters
+
+    #plot chains in 2 columns; emcee_3.0.0 format = (nsteps, nwalkers, nparameters)
+    n_panels = config.BASEMENT.ndim + 1  # +1 for lnprob
+    ncols = 2
+    nrows = int(np.ceil(n_panels / ncols))
+    fig, axes = plt.subplots(nrows, ncols, figsize=(12, 3*nrows))
+    axf = axes.flatten()
+
+    burn_idx = 1. * config.BASEMENT.settings['mcmc_burn_steps'] / config.BASEMENT.settings['mcmc_thin_by']
+
+    #::: plot lnprob (first panel)
+    axf[0].plot(log_prob, '-', rasterized=True)
+    axf[0].axvline(burn_idx, color='k', linestyle='--')
+    mini = np.min(log_prob[int(burn_idx):, :])
+    maxi = np.max(log_prob[int(burn_idx):, :])
+    axf[0].set(title='lnprob', xlabel='steps', rasterized=True, ylim=[mini, maxi])
+    axf[0].xaxis.set_major_locator(FixedLocator(axf[0].get_xticks()))
+    axf[0].set_xticklabels([int(label) for label in axf[0].get_xticks() * config.BASEMENT.settings['mcmc_thin_by']])
+
+    #::: plot parameter chains
     for i in range(config.BASEMENT.ndim):
-        ax = axes[i+1]
+        ax = axf[i + 1]
         ax.set(title=config.BASEMENT.fitkeys[i], xlabel='steps')
-        ax.plot(chain[:,:,i], '-', rasterized=True)
-        ax.axvline( 1.*config.BASEMENT.settings['mcmc_burn_steps']/config.BASEMENT.settings['mcmc_thin_by'], color='k', linestyle='--' )
-        ax.xaxis.set_major_locator(FixedLocator(ax.get_xticks())) #useless line to bypass useless matplotlib warnings
-        ax.set_xticklabels( [int(label) for label in ax.get_xticks()*config.BASEMENT.settings['mcmc_thin_by']] )
+        ax.plot(chain[:, :, i], '-', rasterized=True)
+        ax.axvline(burn_idx, color='k', linestyle='--')
+        ax.xaxis.set_major_locator(FixedLocator(ax.get_xticks()))
+        ax.set_xticklabels([int(label) for label in ax.get_xticks() * config.BASEMENT.settings['mcmc_thin_by']])
+
+    #::: hide unused panels (when n_panels is odd)
+    for j in range(n_panels, len(axf)):
+        axf[j].set_visible(False)
 
     plt.tight_layout()
     return fig, axes
