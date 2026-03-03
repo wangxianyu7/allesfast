@@ -383,8 +383,12 @@ def _plot_de_fit(best_theta):
 def run_amoeba_optimization(s, p0=None):
     """Run Nelder-Mead simplex optimization as a fast alternative/complement to DE.
 
-    Controlled by settings key:
-      amoeba_nmax : max function evaluations (default 0 = skip)
+    Controlled by settings keys:
+      amoeba_nmax  : max function evaluations safety limit (default 0 = skip)
+      amoeba_delta : convergence threshold on |Δlnprob| per iteration (default 0.01)
+
+    Stops when 6 consecutive simplex iterations all have |Δlnprob| < amoeba_delta,
+    mirroring EXOFASTv2's convergence criterion.  amoeba_nmax is a hard upper limit.
 
     Parameters
     ----------
@@ -398,9 +402,12 @@ def run_amoeba_optimization(s, p0=None):
     """
     from scipy.optimize import minimize
 
-    nmax = int(s.get('amoeba_nmax', 0))
+    nmax  = int(s.get('amoeba_nmax', 0))
     if nmax <= 0:
         return None
+
+    delta      = float(s.get('amoeba_delta', 0.01))
+    n_pass_req = 6       # consecutive passes required (mirrors EXOFASTv2)
 
     outdir    = config.BASEMENT.outdir
     best_file = os.path.join(outdir, 'amoeba_best.csv')
@@ -416,32 +423,66 @@ def run_amoeba_optimization(s, p0=None):
 
     theta_0 = np.asarray(p0) if p0 is not None else config.BASEMENT.theta_0.copy()
 
-    logprint(f"\nRunning Amoeba optimisation (max {nmax} evaluations)...")
+    logprint(f"\nRunning Amoeba optimisation (max {nmax} evals, "
+             f"stop when {n_pass_req} × |Δlnprob| < {delta})...")
     logprint('--------------------------')
     logprint(f"  Starting lnprob: {mcmc_lnprob(theta_0):.4f}")
 
     def neg_lnprob(theta):
         lp = mcmc_lnprob(theta)
-        # Return a large finite number at boundaries so NM can move away
+        # Return large finite number at boundaries so NM can move away
         return -lp if np.isfinite(lp) else 1e100
 
-    result = minimize(
-        neg_lnprob, theta_0,
-        method='Nelder-Mead',
-        options={
-            'maxfev':   nmax,
-            'xatol':    1e-6,
-            'fatol':    1e-6,
-            'adaptive': True,   # Gao & Han 2012: better for high-dim
-        },
-    )
+    # --- convergence callback: stop after n_pass_req consecutive small steps ---
+    class _ConvChecker:
+        def __init__(self):
+            self.prev_lp  = None
+            self.n_pass   = 0
+            self.best_x   = theta_0.copy()
+            self.best_lp  = mcmc_lnprob(theta_0)
+            self.niter    = 0
 
-    best       = result.x
+        def __call__(self, xk):
+            lp = mcmc_lnprob(xk)
+            self.niter += 1
+            if lp > self.best_lp:
+                self.best_lp = lp
+                self.best_x  = xk.copy()
+            if self.prev_lp is not None:
+                if abs(lp - self.prev_lp) < delta:
+                    self.n_pass += 1
+                else:
+                    self.n_pass = 0
+            self.prev_lp = lp
+            if self.n_pass >= n_pass_req:
+                raise StopIteration   # caught below
+
+    checker = _ConvChecker()
+    converged_early = False
+    try:
+        result = minimize(
+            neg_lnprob, theta_0,
+            method='Nelder-Mead',
+            callback=checker,
+            options={
+                'maxfev':   nmax,
+                'xatol':    1e-12,   # disable built-in tolerance: rely on callback
+                'fatol':    1e-12,
+                'adaptive': True,    # Gao & Han 2012: better for high-dim
+            },
+        )
+        best = result.x
+        nfev = result.nfev
+    except StopIteration:
+        converged_early = True
+        best = checker.best_x
+        nfev = '≤' + str(nmax)
+
     best_lnprob = mcmc_lnprob(best)
-    logprint(f"  Amoeba best lnprob : {best_lnprob:.4f}  (nfev={result.nfev}, "
-             f"converged={result.success})")
-    if not result.success:
-        logprint(f"  NOTE: {result.message}")
+    if converged_early:
+        logprint(f"  Amoeba converged after {checker.niter} iterations "
+                 f"({n_pass_req} × |Δlnprob| < {delta})")
+    logprint(f"  Amoeba best lnprob : {best_lnprob:.4f}  (nfev={nfev})")
 
     # --- save best params CSV ---
     import pandas as pd
