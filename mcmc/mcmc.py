@@ -378,10 +378,95 @@ def _plot_de_fit(best_theta):
 
 
 ###########################################################################
+#::: Amoeba (Nelder-Mead) optimization
+###########################################################################
+def run_amoeba_optimization(s, p0=None):
+    """Run Nelder-Mead simplex optimization as a fast alternative/complement to DE.
+
+    Controlled by settings key:
+      amoeba_nmax : max function evaluations (default 0 = skip)
+
+    Parameters
+    ----------
+    s  : settings dict
+    p0 : 1-D array, optional
+        Starting point.  Defaults to config.BASEMENT.theta_0.
+
+    Returns
+    -------
+    best_theta : 1-D ndarray, or None if skipped.
+    """
+    from scipy.optimize import minimize
+
+    nmax = int(s.get('amoeba_nmax', 0))
+    if nmax <= 0:
+        return None
+
+    outdir    = config.BASEMENT.outdir
+    best_file = os.path.join(outdir, 'amoeba_best.csv')
+
+    # --- resume: skip if results already exist ---
+    if os.path.exists(best_file):
+        import pandas as pd
+        logprint("\nFound existing Amoeba results – skipping Amoeba optimisation.")
+        logprint(f"  Loading: {best_file}")
+        row  = pd.read_csv(best_file).set_index('parameter')['value']
+        best = row[config.BASEMENT.fitkeys].values
+        return best
+
+    theta_0 = np.asarray(p0) if p0 is not None else config.BASEMENT.theta_0.copy()
+
+    logprint(f"\nRunning Amoeba optimisation (max {nmax} evaluations)...")
+    logprint('--------------------------')
+    logprint(f"  Starting lnprob: {mcmc_lnprob(theta_0):.4f}")
+
+    def neg_lnprob(theta):
+        lp = mcmc_lnprob(theta)
+        # Return a large finite number at boundaries so NM can move away
+        return -lp if np.isfinite(lp) else 1e100
+
+    result = minimize(
+        neg_lnprob, theta_0,
+        method='Nelder-Mead',
+        options={
+            'maxfev':   nmax,
+            'xatol':    1e-6,
+            'fatol':    1e-6,
+            'adaptive': True,   # Gao & Han 2012: better for high-dim
+        },
+    )
+
+    best       = result.x
+    best_lnprob = mcmc_lnprob(best)
+    logprint(f"  Amoeba best lnprob : {best_lnprob:.4f}  (nfev={result.nfev}, "
+             f"converged={result.success})")
+    if not result.success:
+        logprint(f"  NOTE: {result.message}")
+
+    # --- save best params CSV ---
+    import pandas as pd
+    best_df = pd.DataFrame({'parameter': config.BASEMENT.fitkeys, 'value': best})
+    best_df.to_csv(best_file, index=False)
+    logprint(f"  Saved: {best_file}")
+
+    # --- fit diagnostic plots at best Amoeba solution ---
+    _plot_de_fit(best)
+
+    return best
+
+
+###########################################################################
 #::: emcee backend
 ###########################################################################
-def _run_emcee(s, p0_de=None):
-    """Run emcee EnsembleSampler. Returns the sampler."""
+def _run_emcee(s, p0_de=None, p0_best=None):
+    """Run emcee EnsembleSampler. Returns the sampler.
+
+    Parameters
+    ----------
+    p0_de   : (npop, ndim) array from DE population, used for walker seeding.
+    p0_best : (ndim,) array — best single point (from Amoeba or DE best).
+              Used as centre for random perturbations when p0_de is None.
+    """
     outdir = config.BASEMENT.outdir
     save_h5 = os.path.join(outdir, 'mcmc_save.h5')
     continue_old_run = os.path.exists(save_h5)
@@ -406,7 +491,9 @@ def _run_emcee(s, p0_de=None):
                 # Add small perturbation so walkers are not identical
                 p0 = p0 + config.BASEMENT.init_err * np.random.randn(nwalkers, config.BASEMENT.ndim)
             else:
-                p0 = (config.BASEMENT.theta_0
+                # Use p0_best (Amoeba/DE best) if available, else theta_0
+                centre = p0_best if p0_best is not None else config.BASEMENT.theta_0
+                p0 = (centre
                       + config.BASEMENT.init_err
                       * np.random.randn(nwalkers, config.BASEMENT.ndim))
             already_completed_steps = 0
@@ -540,17 +627,22 @@ def mcmc_fit(datadir, method=None):
     t0 = timer()
 
     de_result = run_de_optimization(s)
+    de_best   = de_result[0] if de_result is not None else None
+    de_pop    = de_result[1] if de_result is not None else None
+
+    # Amoeba: polish DE best (or theta_0 if DE was skipped)
+    amoeba_best = run_amoeba_optimization(s, p0=de_best)
+
+    # Best single starting point: amoeba > DE > None (falls back to theta_0 inside sampler)
+    best_p0 = amoeba_best if amoeba_best is not None else de_best
 
     logprint(f"\nRunning MCMC ({method})...")
     logprint('--------------------------')
 
-    de_best = de_result[0] if de_result is not None else None
-    de_pop  = de_result[1] if de_result is not None else None
-
     if method == 'emcee':
-        sampler = _run_emcee(s, p0_de=de_pop)
+        sampler = _run_emcee(s, p0_de=de_pop, p0_best=best_p0)
     elif method == 'demcpt':
-        sampler = _run_demcpt(s, p0_de=de_best)
+        sampler = _run_demcpt(s, p0_de=best_p0)
     else:
         raise ValueError(
             f"Unknown mcmc_sampler: {method!r}. Choose 'emcee' or 'demcpt'."
