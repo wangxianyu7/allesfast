@@ -464,7 +464,20 @@ def mistmultised(teff, logg, feh, av, distance, lstar, errscale, sedfile,
         blendflux      = (modelflux * blend).sum(axis=1)
 
     # ---------- 6. χ² likelihood (matches IDL exofast_like /chi2) ----------
-    sigma = errs * err0
+    # Per-band errscale: if a band belongs exclusively to one star, use that
+    # star's errscale; otherwise fall back to star[0] (primary), consistent
+    # with EXOFASTv2's ss.star[0].errscale convention.
+    errscale_arr = np.atleast_1d(np.asarray(errscale, dtype=float))
+    if errscale_arr.size < nstars:
+        errscale_arr = np.concatenate([
+            errscale_arr,
+            np.full(nstars - errscale_arr.size, errscale_arr[-1])
+        ])
+    sigma = np.empty(nbands)
+    for i in range(nbands):
+        exclusive = np.where(blend[i] > 0)[0]
+        esc = errscale_arr[exclusive[0]] if len(exclusive) == 1 else errscale_arr[0]
+        sigma[i] = errs[i] * esc
     sedchi2 = np.sum(magresiduals**2 / sigma**2 + np.log(2.0 * np.pi * sigma**2))
     return sedchi2, blendmag, modelflux, magresiduals
 

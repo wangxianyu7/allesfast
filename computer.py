@@ -1315,10 +1315,16 @@ def calculate_external_priors(params):
         sed_file = config.BASEMENT.settings.get('sed_file', None)
         if sed_file is not None and not os.path.isabs(sed_file):
             sed_file = os.path.join(config.BASEMENT.datadir, sed_file)
-        # errscale: prefer fitted A_sed_errscale (like EXOFASTv2 which always
-        # fits errscale when SED is used), fall back to settings for compat.
-        _errscale = params.get('A_sed_errscale',
-                               config.BASEMENT.settings.get('sed_errscale', 1.0))
+        # Per-star errscale: A_sed_errscale for star A, B_sed_errscale for
+        # star B, etc.  Falls back to the global sed_errscale setting (default
+        # 1.0) for any star without an explicit param entry.
+        # For blended bands, star[0]'s errscale is used (EXOFASTv2 convention).
+        _default_errscale = config.BASEMENT.settings.get('sed_errscale', 1.0)
+        _star_letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
+        _errscale = np.array([
+            params.get(f'{_star_letters[j]}_sed_errscale', _default_errscale)
+            for j in range(len(stars))
+        ])
         chi2 = sed_chi2(
             stars,
             sed_file=sed_file,
