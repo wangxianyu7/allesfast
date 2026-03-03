@@ -433,6 +433,8 @@ def run_amoeba_optimization(s, p0=None):
         # Return large finite number at boundaries so NM can move away
         return -lp if np.isfinite(lp) else 1e100
 
+    show_progress = s.get('print_progress', True)
+
     # --- convergence callback: stop after n_pass_req consecutive small steps ---
     class _ConvChecker:
         def __init__(self):
@@ -441,6 +443,10 @@ def run_amoeba_optimization(s, p0=None):
             self.best_x   = theta_0.copy()
             self.best_lp  = mcmc_lnprob(theta_0)
             self.niter    = 0
+            self.bar      = None
+            if show_progress:
+                from tqdm import tqdm
+                self.bar = tqdm(desc='Amoeba', unit='iter', dynamic_ncols=True)
 
         def __call__(self, xk):
             lp = mcmc_lnprob(xk)
@@ -454,8 +460,19 @@ def run_amoeba_optimization(s, p0=None):
                 else:
                     self.n_pass = 0
             self.prev_lp = lp
+            if self.bar is not None:
+                self.bar.set_postfix(
+                    lnprob=f'{self.best_lp:.4f}',
+                    dlnp=f'{abs(lp - (self.prev_lp or lp)):.4f}',
+                    npass=f'{self.n_pass}/{n_pass_req}',
+                )
+                self.bar.update(1)
             if self.n_pass >= n_pass_req:
                 raise StopIteration   # caught below
+
+        def close(self):
+            if self.bar is not None:
+                self.bar.close()
 
     checker = _ConvChecker()
     converged_early = False
@@ -476,13 +493,15 @@ def run_amoeba_optimization(s, p0=None):
     except StopIteration:
         converged_early = True
         best = checker.best_x
-        nfev = '≤' + str(nmax)
+        nfev = checker.niter  # approx: 1 callback call ≈ ndim+1 fev for NM
+    finally:
+        checker.close()
 
     best_lnprob = mcmc_lnprob(best)
     if converged_early:
         logprint(f"  Amoeba converged after {checker.niter} iterations "
                  f"({n_pass_req} × |Δlnprob| < {delta})")
-    logprint(f"  Amoeba best lnprob : {best_lnprob:.4f}  (nfev={nfev})")
+    logprint(f"  Amoeba best lnprob : {best_lnprob:.4f}  (iterations≈{checker.niter})")
 
     # --- save best params CSV ---
     import pandas as pd
