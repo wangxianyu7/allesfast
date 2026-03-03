@@ -427,6 +427,7 @@ def run_amoeba_optimization(s, p0=None):
              f"stop when {n_pass_req} × |Δlnprob| < {delta})...")
     logprint('--------------------------')
     logprint(f"  Starting lnprob: {mcmc_lnprob(theta_0):.4f}")
+    logprint(f"  Simplex scale derived from priors (uniform/10 or 3×Gaussian σ)")
 
     def neg_lnprob(theta):
         lp = mcmc_lnprob(theta)
@@ -474,6 +475,24 @@ def run_amoeba_optimization(s, p0=None):
             if self.bar is not None:
                 self.bar.close()
 
+    # Build initial simplex scaled to each parameter's prior width.
+    # Mirrors EXOFASTv2: "amoeba stepping scale = 3× Gaussian width"
+    # or 10% of the uniform range for non-Gaussian priors.
+    ndim = len(theta_0)
+    scale = np.empty(ndim)
+    for k, b in enumerate(config.BASEMENT.bounds):
+        if b[0] == 'uniform':
+            scale[k] = (b[2] - b[1]) / 10.0
+        elif b[0] == 'normal':
+            scale[k] = 3.0 * b[2]
+        else:  # trunc_normal
+            scale[k] = 3.0 * b[2]
+    # Clamp to avoid zero or negative scale
+    scale = np.abs(scale)
+    scale[scale == 0] = 1e-3
+    # Canonical NM simplex: vertex 0 at theta_0; vertex i+1 displaced along dim i
+    initial_simplex = np.vstack([theta_0, theta_0 + np.diag(scale)])
+
     checker = _ConvChecker()
     converged_early = False
     try:
@@ -482,10 +501,11 @@ def run_amoeba_optimization(s, p0=None):
             method='Nelder-Mead',
             callback=checker,
             options={
-                'maxfev':   nmax,
-                'xatol':    1e-12,   # disable built-in tolerance: rely on callback
-                'fatol':    1e-12,
-                'adaptive': True,    # Gao & Han 2012: better for high-dim
+                'maxfev':          nmax,
+                'xatol':           1e-12,   # disable built-in tol: rely on callback
+                'fatol':           1e-12,
+                'adaptive':        True,    # Gao & Han 2012: better for high-dim
+                'initial_simplex': initial_simplex,
             },
         )
         best = result.x
