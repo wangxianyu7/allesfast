@@ -1173,13 +1173,21 @@ def rv_fct(params, inst, companion, xx=None, settings=None):
             vsini = params['A_vsini']
             # xi (vmic) and zeta (vmac): use fitted value if present in params,
             # otherwise derive from empirical relations (Bruntt2010/GES, Doyle2014/GES)
+            # and optionally rescale via A_vxi_scale / A_vzeta_scale (free params,
+            # uniform 0.5 2.0 recommended) to account for empirical-relation uncertainty.
             _teff_rm = float(params.get('A_teff', 5500.0))
             _mstar_rm = float(params.get('A_mstar', 1.0))
             _rstar_rm = float(params.get('A_rstar', 1.0))
             _feh_rm = float(params.get('A_feh', 0.0))
             _logg_rm = float(np.log10(27420.011 * _mstar_rm / _rstar_rm**2))
-            zi   = params['A_xi']   if 'A_xi'   in params else estimate_vmic(_teff_rm, _logg_rm, _feh_rm)
-            zeta = params['A_zeta'] if 'A_zeta' in params else estimate_vmac(_teff_rm, _logg_rm, _feh_rm)
+            if 'A_xi' in params:
+                zi = params['A_xi']
+            else:
+                zi = estimate_vmic(_teff_rm, _logg_rm, _feh_rm) * float(params.get('A_vxi_scale', 1.0))
+            if 'A_zeta' in params:
+                zeta = params['A_zeta']
+            else:
+                zeta = estimate_vmac(_teff_rm, _logg_rm, _feh_rm) * float(params.get('A_vzeta_scale', 1.0))
             ecc = params[companion+'_ecc']
             omega = np.rad2deg(np.mod( np.arctan2(params[companion+'_f_s'], params[companion+'_f_c']), 2*np.pi))
             q1, q2 = params['A_ldc_'+inst]
