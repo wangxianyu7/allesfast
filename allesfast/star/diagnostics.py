@@ -185,8 +185,132 @@ def _star_B_from_params(params):
 
 
 # ---------------------------------------------------------------------------
-# Public plot functions
+# Public data / plot functions
 # ---------------------------------------------------------------------------
+
+def compute_sed_modeldata(params, datadir, errscale=None, sed_file=None):
+    """Compute SED band fluxes and model fluxes without creating a figure.
+
+    Returns a dict of arrays suitable for ``np.savez``, or None if the SED
+    cannot be evaluated (missing stellar params or SED data file).
+
+    Keys
+    ----
+    sedbands, weff_um, widtheff_um : band metadata
+    obs_flux, obs_err              : observed band-integrated fluxes
+    model_flux, residuals, chi2    : model fluxes and residuals (σ)
+    wave_atm_um                    : wavelength axis (μm, 0.1–24)
+    flux_atm_A                     : NextGen atmosphere for star A (if loadable)
+    flux_atm_B, flux_atm_combined  : binary-star atmospheres (if available)
+    has_B, star_A_teff, star_A_av  : scalar metadata for labelling
+    star_B_teff                    : (binary only)
+    """
+    star_A = _star_from_params(params)
+    if any(v is None for v in [star_A.teff, star_A.rstar, star_A.feh,
+                                star_A.av, star_A.distance, star_A.mstar]):
+        return None
+
+    if sed_file is None:
+        sed_file = params.get("sed_file", None)
+    if sed_file is None:
+        hits = _glob.glob(os.path.join(datadir, "*.sed"))
+        sed_file = hits[0] if hits else os.path.join(datadir, "sed.dat")
+    elif not os.path.isabs(sed_file):
+        sed_file = os.path.join(datadir, sed_file)
+    if not os.path.exists(sed_file):
+        return None
+
+    if errscale is None:
+        try:
+            from .. import config as _cfg
+            _esc = _cfg.BASEMENT.settings.get('sed_errscale', 1.0)
+            errscale = float(np.asarray(_esc).flat[0])
+        except Exception:
+            errscale = 1.0
+
+    gravity_sun = 27420.011
+    star_B = _star_B_from_params(params)
+    has_B = all(getattr(star_B, k) is not None
+                for k in ('teff', 'rstar', 'feh', 'av', 'distance', 'mstar'))
+
+    if has_B:
+        nstars = 2
+        teff_arr  = np.array([float(star_A.teff),  float(star_B.teff)])
+        logg_arr  = np.array([
+            np.log10(gravity_sun * float(star_A.mstar) / float(star_A.rstar) ** 2),
+            np.log10(gravity_sun * float(star_B.mstar) / float(star_B.rstar) ** 2),
+        ])
+        feh_arr   = np.array([float(star_A.feh),   float(star_B.feh)])
+        av_arr    = np.array([float(star_A.av),     float(star_B.av)])
+        dist_arr  = np.array([float(star_A.distance), float(star_B.distance)])
+        lstar_arr = np.array([
+            float(star_A.rstar) ** 2 * (float(star_A.teff) / 5772.0) ** 4,
+            float(star_B.rstar) ** 2 * (float(star_B.teff) / 5772.0) ** 4,
+        ])
+    else:
+        nstars = 1
+        logg_A = np.log10(gravity_sun * float(star_A.mstar) / float(star_A.rstar) ** 2)
+        teff_arr  = np.array([float(star_A.teff)])
+        logg_arr  = np.array([logg_A])
+        feh_arr   = np.array([float(star_A.feh)])
+        av_arr    = np.array([float(star_A.av)])
+        dist_arr  = np.array([float(star_A.distance)])
+        lstar_arr = np.array([float(star_A.rstar) ** 2 * (float(star_A.teff) / 5772.0) ** 4])
+
+    sed_data = read_sed_file(sed_file, nstars=nstars)
+    chi2, blendmag, _, _ = mistmultised(
+        teff_arr, logg_arr, feh_arr, av_arr, dist_arr, lstar_arr,
+        float(errscale), sed_file, sed_data=sed_data,
+    )
+
+    zero_point = np.asarray(sed_data["zero_point"], dtype=float)
+    mags       = np.asarray(sed_data["mag"],        dtype=float)
+    errmag     = np.asarray(sed_data["errmag"],     dtype=float)
+    weff       = np.asarray(sed_data["weff"],       dtype=float)
+    widtheff   = np.asarray(sed_data["widtheff"],   dtype=float)
+    sedbands   = np.asarray(sed_data["sedbands"])
+    blendmag   = np.asarray(blendmag,               dtype=float)
+    obs_flux   = zero_point * 10 ** (-0.4 * mags)
+    obs_err    = obs_flux * np.log(10) / 2.5 * errmag
+    model_flux = zero_point * 10 ** (-0.4 * blendmag)
+    residuals  = np.where(obs_err > 0, (obs_flux - model_flux) / obs_err, 0.0)
+
+    def _get_atm(teff, logg, feh, rstar, distance, av):
+        lf = _interp_atmosphere(float(teff), float(logg), float(feh))
+        if lf is None:
+            return None
+        lf = _scale_atmosphere(lf, float(rstar), float(distance))
+        lf = _apply_extinction(lf, float(av))
+        return lf
+
+    atm_A = _get_atm(star_A.teff, logg_arr[0], star_A.feh,
+                     star_A.rstar, star_A.distance, star_A.av)
+    atm_B = _get_atm(star_B.teff, logg_arr[1], star_B.feh,
+                     star_B.rstar, star_B.distance, star_B.av) if has_B else None
+
+    result = dict(
+        sedbands=sedbands,
+        weff_um=weff,
+        widtheff_um=widtheff,
+        obs_flux=obs_flux,
+        obs_err=obs_err,
+        model_flux=model_flux,
+        residuals=residuals,
+        chi2=np.array([chi2]),
+        has_B=np.array([has_B]),
+        star_A_teff=np.array([float(star_A.teff)]),
+        star_A_av=np.array([float(star_A.av)]),
+        wave_atm_um=_WAVELENGTH.copy(),
+    )
+    if has_B:
+        result['star_B_teff'] = np.array([float(star_B.teff)])
+    if atm_A is not None:
+        result['flux_atm_A'] = atm_A
+    if atm_B is not None:
+        result['flux_atm_B'] = atm_B
+        result['flux_atm_combined'] = atm_A + atm_B
+    return result
+
 
 def make_sed_plot(params, datadir, outdir, outfile="stellar_sed_fit.pdf", errscale=1.0, sed_file=None):
     star_A = _star_from_params(params)

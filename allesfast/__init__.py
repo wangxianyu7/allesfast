@@ -43,7 +43,7 @@ sns.set_context(rc={'lines.markeredgewidth': 1})
 #:::: allesfast modules
 from . import config
 
-from .mcmc.mcmc import mcmc_fit, demcpt_fit
+from .mcmc.mcmc import mcmc_fit, demcpt_fit, de_fit
 from .nestedsampling.nested_sampling import ns_fit
 
 from . import general_output
@@ -56,6 +56,7 @@ from .mcmc.mcmc_output import get_mcmc_posterior_samples, mcmc_output, draw_mcmc
 from .computer import calculate_model, calculate_baseline, calculate_stellar_var, calculate_yerr_w, update_params
 
 from .priors import transform_priors
+from .utils.plot_publication import make_summary_plot
 from .priors.estimate_noise import estimate_noise, estimate_noise_out_of_transit
 
 from .prepare_ttv_fit import prepare_ttv_fit

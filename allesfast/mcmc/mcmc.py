@@ -297,6 +297,13 @@ def _save_de_results(de):
     # --- fit diagnostic plots at best DE solution ---
     _plot_de_fit(pop[best_idx])
 
+    # --- model data files at best DE solution ---
+    try:
+        from ..general_output import save_modelfiles
+        save_modelfiles(pop[best_idx][np.newaxis, :], 'optimized')
+    except Exception as e:
+        logprint(f"  WARNING: save_modelfiles failed – {e}")
+
     if config.BASEMENT.settings.get('cornerplot', False):
         # --- corner plot of the final population, weighted by lnprob ---
         try:
@@ -798,4 +805,34 @@ def mcmc_fit(datadir, method=None):
 def demcpt_fit(datadir):
     """Backward-compatible alias for ``mcmc_fit(datadir, method='demcpt')``."""
     return mcmc_fit(datadir, method='demcpt')
+
+
+def de_fit(datadir):
+    """Run DE + amoeba optimization only, without MCMC.
+
+    Saves results to the output directory (optimized_best.csv,
+    optimized_population.csv) and generates fit plots, then returns.
+    Useful for checking the optimizer converges before committing to a
+    full MCMC run.
+    """
+    config.init(datadir)
+    s = config.BASEMENT.settings
+
+    t0 = timer()
+
+    de_result = run_de_optimization(s)
+    de_best   = de_result[0] if de_result is not None else None
+
+    amoeba_best = run_amoeba_optimization(s, p0=de_best)
+
+    best_p0 = amoeba_best if amoeba_best is not None else de_best
+
+    if best_p0 is not None:
+        lnp = mcmc_lnprob(best_p0)
+        logprint(f"\nFinal best lnprob after optimization: {lnp:.4f}")
+    else:
+        logprint("\nNo optimization was run (de_ngen=0 and amoeba skipped).")
+
+    t1 = timer()
+    logprint(f"\nTime taken: {(t1 - t0) / 3600:.2f} hours")
 

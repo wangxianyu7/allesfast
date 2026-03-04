@@ -1040,6 +1040,79 @@ def save_latex_table(samples, mode):
 ###############################################################################
 #::: show initial guess
 ###############################################################################
+def save_modelfiles(samples, prefix):
+    """Save model data files to results/modelfiles/{prefix}_{inst}.npz.
+
+    Called at three stages:
+      'initial_guess' — params.csv initial values
+      'optimized'     — best DE/amoeba solution
+      'mcmc'          — MCMC posterior median
+
+    Each photometry/RV file contains:
+      time, data, err, model, baseline, stellar_var, total, residuals
+      time_dense, model_dense, baseline_dense, stellar_var_dense
+
+    SED is saved to {prefix}_sed.npz (if SED data is available).
+    """
+    from .star.diagnostics import compute_sed_modeldata
+
+    outdir   = config.BASEMENT.outdir
+    modeldir = os.path.join(outdir, 'modelfiles')
+    os.makedirs(modeldir, exist_ok=True)
+
+    params_median, _, _ = get_params_from_samples(samples)
+
+    for inst in config.BASEMENT.settings['inst_all']:
+        if inst in config.BASEMENT.settings['inst_phot']:
+            key = 'flux'
+        elif inst in config.BASEMENT.settings.get('inst_rv', []):
+            key = 'rv'
+        elif inst in config.BASEMENT.settings.get('inst_rv2', []):
+            key = 'rv2'
+        else:
+            continue
+        try:
+            time = config.BASEMENT.data[inst]['time']
+            data = config.BASEMENT.data[inst][key]
+            err_w       = calculate_yerr_w(params_median, inst, key)
+            model       = calculate_model(params_median, inst, key)
+            baseline    = calculate_baseline(params_median, inst, key, model=model)
+            stellar_var = calculate_stellar_var(params_median, 'all', key, xx=time)
+            total       = model + baseline + stellar_var
+            residuals   = data - total
+
+            span = time[-1] - time[0]
+            dt = 2. / 24. / 60. if key == 'flux' else (span / 500. if span > 0 else 2. / 24. / 60.)
+            xx = np.arange(time[0], time[-1] + dt, dt)
+            model_dense       = calculate_model(params_median, inst, key, xx=xx)
+            baseline_dense    = calculate_baseline(params_median, inst, key, xx=xx)
+            stellar_var_dense = calculate_stellar_var(params_median, 'all', key, xx=xx)
+
+            fname = os.path.join(modeldir, f'{prefix}_{inst}.npz')
+            np.savez(fname,
+                     time=time, data=data, err=err_w,
+                     model=model, baseline=baseline,
+                     stellar_var=stellar_var, total=total, residuals=residuals,
+                     time_dense=xx, model_dense=model_dense,
+                     baseline_dense=baseline_dense,
+                     stellar_var_dense=stellar_var_dense)
+            logprint(f"  Saved modelfile: {fname}")
+        except Exception as e:
+            logprint(f"  WARNING: save_modelfiles failed for {inst} – {e}")
+
+    # SED
+    try:
+        _sed_file = config.BASEMENT.settings.get('sed_file', None)
+        sed = compute_sed_modeldata(params_median, config.BASEMENT.datadir,
+                                    sed_file=_sed_file)
+        if sed is not None:
+            fname = os.path.join(modeldir, f'{prefix}_sed.npz')
+            np.savez(fname, **sed)
+            logprint(f"  Saved modelfile: {fname}")
+    except Exception as e:
+        logprint(f"  WARNING: save_modelfiles failed for SED – {e}")
+
+
 def show_initial_guess(datadir, quiet=False, do_logprint=True, do_plot=True, return_figs=False, kwargs_dict=None):
     #::: init
     config.init(datadir, quiet=quiet)    
@@ -1155,6 +1228,10 @@ def plot_initial_guess(return_figs=False, kwargs_dict=None):
                 logprint(f'\nSaved {path}')
         except Exception as _e:
             logprint(f'\nMIST plot failed: {_e}')
+        try:
+            save_modelfiles(samples, 'initial_guess')
+        except Exception as _e:
+            logprint(f'\nModelfiles generation failed: {_e}')
         return None
     
     else:

@@ -102,19 +102,26 @@ class Basement():
                 _idx = np.where(self.fitkeys == _key)[0][0]
                 self.theta_0[_idx] = np.median(self.data[_inst]['rv'])
 
-        # Load observed transit midtimes (*.{companion}.ttv files) for TTV prior
+        # Load observed transit midtimes from midtimes.csv for ephemeris prior.
+        # Expected CSV with header: midtimes,err,pl_letter
+        # e.g.  2456204.817,0.00074,b
         self.ttv_data = {}
-        import glob as _glob
-        for _ttv_path in _glob.glob(os.path.join(self.datadir, '*.ttv')):
-            _fname = os.path.basename(_ttv_path)
-            # Expect format: anything.{companion}.ttv  (e.g. n20240817.b.ttv)
-            _parts = _fname.split('.')
-            if len(_parts) >= 3:
-                _companion = _parts[-2]   # 'b' from 'n20240817.b.ttv'
-                _arr = np.genfromtxt(_ttv_path, dtype=float)
-                if _arr.ndim == 1:
-                    _arr = _arr[np.newaxis, :]   # single-row file edge case
-                self.ttv_data[_companion] = (_arr[:, 0], _arr[:, 1])
+        _midtimes_path = os.path.join(self.datadir, 'midtimes.csv')
+        if os.path.exists(_midtimes_path):
+            import csv as _csv
+            with open(_midtimes_path, newline='') as _fh:
+                _reader = _csv.DictReader(_fh)
+                for _row in _reader:
+                    _letter = _row['pl_letter'].strip()
+                    _t      = float(_row['midtimes'])
+                    _e      = float(_row['err'])
+                    if _letter not in self.ttv_data:
+                        self.ttv_data[_letter] = ([], [])
+                    self.ttv_data[_letter][0].append(_t)
+                    self.ttv_data[_letter][1].append(_e)
+            for _letter in self.ttv_data:
+                _ts, _es = self.ttv_data[_letter]
+                self.ttv_data[_letter] = (np.array(_ts), np.array(_es))
 
         if self.settings['shift_epoch']:
             try:
@@ -276,9 +283,9 @@ class Basement():
         #::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
         self.settings['multiprocess'] = set_bool(self.settings['multiprocess'])
         
-        from pprint import pprint
-        pprint(self.settings)
-        
+        # from pprint import pprint
+        # pprint(self.settings)
+
         if 'multiprocess_cores' not in self.settings.keys():
             self.settings['multiprocess_cores'] = cpu_count()-1
         elif self.settings['multiprocess_cores'] == 'all':

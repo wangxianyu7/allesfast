@@ -465,6 +465,13 @@ def mcmc_output(datadir, quiet=False):
         logprint('\nCould not save params_best.csv:', _e)
 
 
+    #::: save model data files using posterior median
+    try:
+        from ..general_output import save_modelfiles
+        save_modelfiles(posterior_samples, 'mcmc')
+    except Exception as _e:
+        logprint(f'\nWARNING: save_modelfiles failed – {_e}')
+
     #::: clean up and delete the tmp file
     os.remove(os.path.join(config.BASEMENT.outdir,'mcmc_save_tmp.h5'))
 
