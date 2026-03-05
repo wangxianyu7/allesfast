@@ -52,11 +52,15 @@ def mist_chi2(star: 'StellarInputs | list[StellarInputs]',
     for idx, s in enumerate(stars):
         if any(v is None for v in [s.eep, s.mstar, s.feh, s.teff, s.rstar]):
             return np.inf
+        # Use initfeh (initial birth metallicity) as MIST track input if available;
+        # otherwise fall back to feh (spectroscopic). EXOFASTv2 style: initfeh drives
+        # track interpolation, feh is the observed surface value compared to mistfeh.
+        _initfeh = float(s.initfeh) if s.initfeh is not None else float(s.feh)
         try:
             chi2 = massradius_mist(
                 eep=float(s.eep),
                 mstar=float(s.mstar),
-                feh=float(s.feh),
+                feh=_initfeh,
                 teff=float(s.teff),
                 rstar=float(s.rstar),
                 age=float(s.age) if s.age is not None else None,
@@ -70,7 +74,7 @@ def mist_chi2(star: 'StellarInputs | list[StellarInputs]',
             # store derived age so coupled_tolerance can act on it
             if params is not None and idx < len(labels):
                 age = get_mistage(
-                    float(s.eep), float(s.mstar), float(s.feh),
+                    float(s.eep), float(s.mstar), _initfeh,
                     vvcrit=cfg.get('vvcrit', None),
                     alpha=cfg.get('alpha', None),
                 )
@@ -108,12 +112,15 @@ def sed_chi2(
         return np.inf
 
     try:
-        teff_arr     = np.array([float(s.teff)     for s in stars])
-        logg_arr     = np.array([_derive_logg(float(s.mstar), float(s.rstar)) for s in stars])
-        feh_arr      = np.array([float(s.feh)      for s in stars])
+        # EXOFASTv2 style: use teffsed/rstarsed/fehsed for SED if available,
+        # else fall back to teff/rstar/feh.  logg and lstar derived from rstarsed.
+        teff_arr     = np.array([float(s.teffsed  if s.teffsed  is not None else s.teff)  for s in stars])
+        rstar_sed    = np.array([float(s.rstarsed if s.rstarsed is not None else s.rstar) for s in stars])
+        logg_arr     = np.array([_derive_logg(float(s.mstar), rstar_sed[i]) for i, s in enumerate(stars)])
+        feh_arr      = np.array([float(s.fehsed   if s.fehsed   is not None else s.feh)   for s in stars])
         av_arr       = np.array([float(s.av)       for s in stars])
         distance_arr = np.array([float(s.distance) for s in stars])
-        lstar_arr    = np.array([_derive_lstar(float(s.teff), float(s.rstar)) for s in stars])
+        lstar_arr    = np.array([_derive_lstar(teff_arr[i], rstar_sed[i]) for i in range(len(stars))])
 
         if sed_data is None:
             sed_data = read_sed_file(os.path.abspath(sed_file), nstars=nstars)

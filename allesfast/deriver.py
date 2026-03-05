@@ -482,6 +482,34 @@ def derive(samples, mode):
         derived_samples['A_lambda'] = np.degrees(np.arctan2(_ss, _sc))
 
 
+    #==========================================================================
+    #::: stellar derived parameters
+    #==========================================================================
+    # A_mstar from A_logmstar (EXOFASTv2 style)
+    if 'A_logmstar' in config.BASEMENT.fitkeys:
+        derived_samples['A_mstar'] = 10.0 ** get_params('A_logmstar')
+
+    # A_logg from A_rstar + A_mstar (cgs: log10(G*M/R^2))
+    _rstar_s = get_params('A_rstar')
+    if 'A_mstar' in derived_samples:
+        _mstar_s = derived_samples['A_mstar']
+    elif 'A_mstar' in config.BASEMENT.fitkeys:
+        _mstar_s = get_params('A_mstar')
+    else:
+        _mstar_s = None
+    if _mstar_s is not None and not np.all(np.isnan(np.atleast_1d(_rstar_s))):
+        _G_cgs    = 6.674e-8   # cm^3 g^-1 s^-2
+        _Msun_cgs = 1.989e33   # g
+        _Rsun_cgs = 6.957e10   # cm
+        _g_cgs = _G_cgs * _mstar_s * _Msun_cgs / (_rstar_s * _Rsun_cgs)**2
+        derived_samples['A_logg'] = np.log10(_g_cgs)
+
+    # A_distance from A_parallax (mas → pc)
+    if 'A_parallax' in config.BASEMENT.fitkeys:
+        _par_s = get_params('A_parallax')
+        derived_samples['A_distance'] = 1000.0 / _par_s
+
+
     ###############################################################################
     #::: write keys for output
     ###############################################################################
@@ -625,6 +653,18 @@ def derive(samples, mode):
     if 'A_lambda' in derived_samples:
         names.append( 'A_lambda' )
         labels.append( r'Spin-orbit angle; $\lambda$ (deg)' )
+
+    if 'A_mstar' in derived_samples:
+        names.append( 'A_mstar' )
+        labels.append( r'Stellar mass; $M_\star$ ($M_\odot$)' )
+
+    if 'A_logg' in derived_samples:
+        names.append( 'A_logg' )
+        labels.append( r'Stellar surface gravity; $\log g_\star$ (cgs)' )
+
+    if 'A_distance' in derived_samples:
+        names.append( 'A_distance' )
+        labels.append( r'Distance; $d$ (pc)' )
 
 
     ###############################################################################

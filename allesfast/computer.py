@@ -290,6 +290,16 @@ def update_params(theta):
         params['A_vsini']  = _sc**2 + _ss**2
         params['A_lambda'] = np.degrees(np.arctan2(_ss, _sc))
 
+    #=========================================================================
+    #::: logmstar → mstar (EXOFASTv2 style)
+    #::: A_logmstar is the fitted param; A_mstar is derived for output/downstream use
+    #=========================================================================
+    for _ltr in 'ABCDEFGHIJKLMNOPQRSTUVWXYZ':
+        _logm_key = f'{_ltr}_logmstar'
+        _m_key    = f'{_ltr}_mstar'
+        if params.get(_logm_key) is not None:
+            params[_m_key] = 10.0 ** float(params[_logm_key])
+
 
     #=========================================================================
     #::: rsuma from Kepler's third law (when not a free parameter)
@@ -1276,11 +1286,20 @@ def calculate_external_priors(params):
         _parallax = params.get('A_parallax', None)
         if _parallax is not None and _parallax > 0:
             _distance = 1000.0 / _parallax   # mas → pc
+    # logmstar support (EXOFASTv2 style): if A_logmstar is a free param, derive mstar from it
+    # and store back into params so downstream code (density, RM, etc.) picks it up.
+    _logmstar_A = params.get('A_logmstar', None)
+    if _logmstar_A is not None:
+        params['A_mstar'] = 10.0 ** float(_logmstar_A)
     star_A = StellarInputs(
         teff=params.get('A_teff', None),
         logg=params.get('A_logg', None),
         feh=params.get('A_feh', None),
+        initfeh=params.get('A_initfeh', None),   # initial metallicity for MIST track (EXOFASTv2 style)
         rstar=params.get('A_rstar', None),
+        teffsed=params.get('A_teffsed', None),   # SED-specific Teff (EXOFASTv2 style)
+        rstarsed=params.get('A_rstarsed', None), # SED-specific Rstar (EXOFASTv2 style)
+        fehsed=params.get('A_fehsed', None),     # SED-specific [Fe/H] (EXOFASTv2 style)
         mstar=params.get('A_mstar', None),
         eep=params.get('A_eep', None),     # primary MIST parameter (replaces age)
         age=params.get('A_age', None),     # legacy / non-MIST use only
@@ -1293,6 +1312,10 @@ def calculate_external_priors(params):
     for _letter in 'BCDEFGHIJKLMNOPQRSTUVWXYZ':
         if params.get(f'{_letter}_rstar') is None:
             break
+        # logmstar support for companion stars
+        _logmstar_x = params.get(f'{_letter}_logmstar', None)
+        if _logmstar_x is not None:
+            params[f'{_letter}_mstar'] = 10.0 ** float(_logmstar_x)
         # Resolve per-star distance; fall back to star A's distance if not set.
         # Coupling (e.g. B_parallax coupled_with A_parallax) is already resolved
         # in params, so params.get('B_parallax') returns the A value when coupled.
@@ -1306,10 +1329,14 @@ def calculate_external_priors(params):
         stars.append(StellarInputs(
             teff=params.get(f'{_letter}_teff', None),
             rstar=params.get(f'{_letter}_rstar', None),
+            teffsed=params.get(f'{_letter}_teffsed', None),
+            rstarsed=params.get(f'{_letter}_rstarsed', None),
+            fehsed=params.get(f'{_letter}_fehsed', None),
             mstar=params.get(f'{_letter}_mstar', None),
             eep=params.get(f'{_letter}_eep', None),
             age=params.get(f'{_letter}_age', None),
             feh=params.get(f'{_letter}_feh', None),
+            initfeh=params.get(f'{_letter}_initfeh', None),
             av=params.get(f'{_letter}_av', None),
             distance=_x_distance,
         ))
@@ -1329,6 +1356,26 @@ def calculate_external_priors(params):
             lnp += -0.5 * chi2
         else:
             return -np.inf
+
+    #::: teffsed / rstarsed / fehsed soft coupling (EXOFASTv2 style)
+    # Penalise SED-specific params departing from their spectroscopic counterparts.
+    # teffsedfloor (default 0.02 = 2%) used for Teff and Rstar; fehsedfloor (default
+    # 0.0 = no coupling) for [Fe/H], matching EXOFASTv2 defaults.
+    _teffsedfloor = float(config.BASEMENT.settings.get('teffsedfloor', 0.02))
+    _fehsedfloor  = float(config.BASEMENT.settings.get('fehsedfloor',  0.0))
+    for _s, _ltr in zip(stars, 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'):
+        _teffsed  = params.get(f'{_ltr}_teffsed',  None)
+        _teff     = params.get(f'{_ltr}_teff',     None)
+        _rstarsed = params.get(f'{_ltr}_rstarsed', None)
+        _rstar    = params.get(f'{_ltr}_rstar',    None)
+        _fehsed   = params.get(f'{_ltr}_fehsed',   None)
+        _feh      = params.get(f'{_ltr}_feh',      None)
+        if _teffsed is not None and _teff is not None:
+            lnp -= 0.5 * ((_teff - _teffsed) / (_teffsedfloor * _teffsed)) ** 2
+        if _rstarsed is not None and _rstar is not None:
+            lnp -= 0.5 * ((_rstar - _rstarsed) / (_teffsedfloor * _rstarsed)) ** 2
+        if _fehsed is not None and _feh is not None and _fehsedfloor > 0:
+            lnp -= 0.5 * ((_feh - _fehsed) / _fehsedfloor) ** 2
 
     if config.BASEMENT.settings.get('use_sed_prior', False):
         sed_file = config.BASEMENT.settings.get('sed_file', None)
