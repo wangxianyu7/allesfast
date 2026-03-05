@@ -288,10 +288,8 @@ def _save_de_results(de):
 
     # --- best-params CSV ---
     best_idx  = int(np.argmax(lnprobs))
-    best_df   = pd.DataFrame({'parameter': fitkeys,
-                               'value':     pop[best_idx]})
     best_file = os.path.join(outdir, 'optimized_best.csv')
-    best_df.to_csv(best_file, index=False)
+    _save_optimized_best(dict(zip(fitkeys, pop[best_idx])), best_file)
     logprint(f"  Saved: {best_file}")
 
     # --- fit diagnostic plots at best DE solution ---
@@ -323,6 +321,40 @@ def _save_de_results(de):
             logprint(f"  Saved: {plot_file}")
         except Exception as e:
             logprint(f"  WARNING: DE corner plot failed – {e}")
+
+
+def _save_optimized_best(best_map, dest_path):
+    """
+    Write optimized best parameters as a params.csv-compatible file.
+
+    Copies params.csv line by line, replacing the value field for any
+    parameter in best_map (fit parameters). Fixed rows are preserved
+    unchanged.  The result can be copied directly over params.csv to
+    warm-start the next run.
+
+    Parameters
+    ----------
+    best_map : dict  {param_name: best_value}
+    dest_path : str  output file path
+    """
+    src = os.path.join(config.BASEMENT.datadir, 'params.csv')
+    out_lines = []
+    with open(src, 'r') as fh:
+        for line in fh:
+            stripped = line.rstrip('\n')
+            # preserve comment / empty lines as-is
+            if stripped.lstrip().startswith('#') or stripped.strip() == '':
+                out_lines.append(stripped)
+                continue
+            # split on first comma only to get the parameter name
+            parts = stripped.split(',', 2)
+            if len(parts) >= 2 and parts[0] in best_map:
+                parts[1] = f'{best_map[parts[0]]:.10e}'
+                out_lines.append(','.join(parts))
+            else:
+                out_lines.append(stripped)
+    with open(dest_path, 'w') as fh:
+        fh.write('\n'.join(out_lines) + '\n')
 
 
 def _plot_de_fit(best_theta):
@@ -582,9 +614,7 @@ def run_amoeba_optimization(s, p0=None):
     logprint(f"  Amoeba done: {ncalls} evals, best lnprob = {lp_final:.4f}")
 
     # --- save best params CSV ---
-    import pandas as pd
-    best_df = pd.DataFrame({'parameter': config.BASEMENT.fitkeys, 'value': best})
-    best_df.to_csv(best_file, index=False)
+    _save_optimized_best(dict(zip(config.BASEMENT.fitkeys, best)), best_file)
     logprint(f"  Saved: {best_file}")
 
     # --- fit diagnostic plots at best Amoeba solution ---
