@@ -1069,23 +1069,14 @@ class Basement():
         """
         Resolve the CSV path for instrument *inst*.
 
-        Tries in order:
-          1. <datadir>/<inst>.csv              (allesfitter convention)
-          2. <datadir>/n*<inst>*Tran.csv       (EXOFASTv2 photometry)  [ftype='phot']
-             <datadir>/n*<inst>*RV.csv         (EXOFASTv2 RV)          [ftype='rv']
-
+        Strictly requires <datadir>/<inst>.csv to exist.
         Returns the resolved path, or raises FileNotFoundError.
         """
-        simple = os.path.join(datadir, inst + '.csv')
-        if os.path.exists(simple):
-            return simple
-        suffix = 'Tran' if ftype == 'phot' else 'RV'
-        matches = sorted(_glob.glob(os.path.join(datadir, f'n*{inst}*{suffix}.csv')))
-        if matches:
-            return matches[0]   # use earliest date if multiple
+        path = os.path.join(datadir, inst + '.csv')
+        if os.path.exists(path):
+            return path
         raise FileNotFoundError(
-            f'{inst}.csv not found in {datadir} '
-            f'(also searched for n*{inst}*{suffix}.csv)'
+            f'{inst}.csv not found in {datadir}'
         )
 
     def load_data(self):
