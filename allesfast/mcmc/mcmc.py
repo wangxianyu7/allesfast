@@ -832,9 +832,10 @@ def mcmc_fit(datadir, method=None):
     logprint(f'\nAuto burn-in: stored step {burnndx} → {s["mcmc_burn_steps"]} total steps '
              f'({100. * burnndx / log_prob.shape[0]:.0f}% of chain)')
 
-    logprint('\nAcceptance fractions:')
-    logprint('--------------------------')
-    logprint(sampler.acceptance_fraction)
+    if method == 'emcee':
+        logprint('\nAcceptance fractions:')
+        logprint('--------------------------')
+        logprint(sampler.acceptance_fraction)
 
 
 def demcpt_fit(datadir):

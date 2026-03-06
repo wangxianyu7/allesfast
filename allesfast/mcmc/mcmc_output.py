@@ -25,11 +25,11 @@ sns.set_context(rc={'lines.markeredgewidth': 1})
 #::: modules
 import numpy as np
 import matplotlib.pyplot as plt    
-from matplotlib.ticker import ScalarFormatter, FixedLocator
+from matplotlib.ticker import FixedLocator
 import os
 from shutil import copyfile
 import emcee
-from corner import corner
+import arviz as az
 import warnings
 
 #::: allesfast modules
@@ -37,8 +37,8 @@ from .. import config
 from .. import deriver
 from ..computer import calculate_model, calculate_baseline, calculate_stellar_var
 from ..general_output import afplot, afplot_per_transit, save_table, save_latex_table, logprint, get_params_from_samples, plot_ttv_results
-from ..plotting.plot_top_down_view import plot_top_down_view
 from ..utils.latex_printer import round_tex
+from ..plotting.plot_top_down_view import plot_top_down_view
 from ..statistics import residual_stats
 from ..star import make_sed_plot, make_mist_plot
 from ..star import get_stellar_row, has_stellar_info, plot_params_star
@@ -137,89 +137,75 @@ def plot_MCMC_chains(sampler):
     
     
 # ##############################################################################
-# ::: plot the MCMC corner plot
+# ::: plot the MCMC corner plot (arviz-based, memory-efficient)
 # ##############################################################################
 def plot_MCMC_corner(sampler):
-   samples = sampler.get_chain(flat=True, discard=int(1.*config.BASEMENT.settings['mcmc_burn_steps']/config.BASEMENT.settings['mcmc_thin_by']))
-   
-   fig = corner(samples, 
-                labels = config.BASEMENT.fitkeys,
-                range = [0.999]*config.BASEMENT.ndim,
-                quantiles=[0.15865, 0.5, 0.84135],
-                show_titles=True, title_kwargs={"fontsize": 14},
-                truths=config.BASEMENT.fittruths)
-           
-   return fig
-
-def plot_MCMC_corner(sampler):
     samples = sampler.get_chain(flat=True, discard=int(1.*config.BASEMENT.settings['mcmc_burn_steps']/config.BASEMENT.settings['mcmc_thin_by']))
-    # Last 10000 samples for plotting, to speed up the corner plot (otherwise it can be very slow with more samples)
-    if samples.shape[0]>10000:
-        samples = samples[np.random.randint(samples.shape[0], size=10000),:]
+    if samples.shape[0] > 10000:
+        samples = samples[np.random.randint(samples.shape[0], size=10000), :]
 
     params_median, params_ll, params_ul = get_params_from_samples(samples)
-    params_median2, params_ll2, params_ul2 = params_median.copy(), params_ll.copy(), params_ul.copy()
-    fittruths2 = config.BASEMENT.fittruths.copy()
 
-    #::: make pretty titles for the corner plot  
-    labels, units = [], []
-    for i,l in enumerate(config.BASEMENT.fitlabels):
-        labels.append( str(config.BASEMENT.fitlabels[i]) )
-        units.append( str(config.BASEMENT.fitunits[i]) )
-    
+    #::: build labels with units
+    labels = []
+    for i in range(len(config.BASEMENT.fitlabels)):
+        lbl = str(config.BASEMENT.fitlabels[i])
+        unit = str(config.BASEMENT.fitunits[i])
+        if unit.strip():
+            lbl = lbl + ' (' + unit + ')'
+        labels.append(lbl)
+
+    #::: shift epoch columns for readability
+    ref_values = dict(zip(list(config.BASEMENT.fitkeys), list(config.BASEMENT.fittruths)))
     for companion in config.BASEMENT.settings['companions_all']:
-        if companion+'_epoch' in config.BASEMENT.fitkeys:
-            ind = np.where(config.BASEMENT.fitkeys==companion+'_epoch')[0][0]
-            samples[:,ind] -= int(params_median[companion+'_epoch'])                #np.round(params_median[companion+'_epoch'],decimals=0)
-            units[ind] = str(units[ind]+'-'+str(int(params_median[companion+'_epoch']))+'d')    #np.format_float_positional(params_median[companion+'_epoch'],0)+'d')
-            fittruths2[ind] -= int(params_median[companion+'_epoch'])
-            params_median2[companion+'_epoch'] -= int(params_median[companion+'_epoch'])
-                
-    for i,l in enumerate(labels):
-        if len( units[i].strip(' ') ) > 0:
-            labels[i] = str(labels[i]+' ('+units[i]+')')
-        
-    #::: corner plot
-    fontsize = np.min(( 24. + 0.5*config.BASEMENT.ndim, 40 ))
-    fig = corner(samples, 
-                 labels = labels,
-                 range = [0.999]*config.BASEMENT.ndim,
-                 quantiles=[0.15865, 0.5, 0.84135],
-                 show_titles=False, 
-                 #title_kwargs={"fontsize": 14},
-                 label_kwargs={"fontsize":fontsize, "rotation":45, "horizontalalignment":'right'},
-                 max_n_ticks=3,
-                 truths=fittruths2, truth_color="r")
-    caxes = np.reshape(np.array(fig.axes), (config.BASEMENT.ndim,config.BASEMENT.ndim))
+        key = companion + '_epoch'
+        if key in config.BASEMENT.fitkeys:
+            ind = np.where(config.BASEMENT.fitkeys == key)[0][0]
+            offset = int(params_median[key])
+            samples[:, ind] -= offset
+            labels[ind] += '-' + str(offset) + 'd'
+            ref_values[key] -= offset
 
-    #::: set allesfast titles
-    for i, key in enumerate(config.BASEMENT.fitkeys): 
-        
-        value = round_tex(params_median2[key], params_ll2[key], params_ul2[key])
-        ctitle = r'' + labels[i] + '\n' + r'$=' + value + '$'
-        if len(config.BASEMENT.fitkeys)>1:
-            # caxes[i,i].set_title(ctitle)
-            caxes[i,i].set_title(ctitle, fontsize=fontsize, rotation=45, horizontalalignment='left')
-            for i in range(caxes.shape[0]):
-                for j in range(caxes.shape[1]):
-                    caxes[i,j].xaxis.set_label_coords(0.5, -0.5)
-                    caxes[i,j].yaxis.set_label_coords(-0.5, 0.5)
-        
-                    if i==(caxes.shape[0]-1): 
-                        fmt = ScalarFormatter(useOffset=False)
-                        caxes[i,j].xaxis.set_major_formatter(fmt)
-                    if (i>0) and (j==0):
-                        fmt = ScalarFormatter(useOffset=False)
-                        caxes[i,j].yaxis.set_major_formatter(fmt)
-                        
-                    # for tick in caxes[i,j].xaxis.get_major_ticks(): tick.label.set_fontsize(24) 
-                    # for tick in caxes[i,j].yaxis.get_major_ticks(): tick.label.set_fontsize(24)    
-        else:
-            caxes[i,i].set_title(ctitle)
-            caxes[i,i].xaxis.set_label_coords(0.5, -0.5)
-            caxes[i,i].yaxis.set_label_coords(-0.5, 0.5)
-            
-            
+    #::: build arviz InferenceData from the flat samples
+    #    Use fitkeys (unique) as dict keys; labels may have duplicates
+    fitkeys_list = list(config.BASEMENT.fitkeys)
+    var_dict = {}
+    for i, key in enumerate(fitkeys_list):
+        var_dict[key] = samples[np.newaxis, :, i]  # shape (1, n_samples) = 1 chain
+    idata = az.from_dict(posterior=var_dict)
+
+    #::: reference values for arviz
+    ref_dict = {key: ref_values[key] for key in fitkeys_list}
+
+    #::: build label mapping: fitkey -> display label
+    labeller = az.labels.MapLabeller(var_name_map=dict(zip(fitkeys_list, labels)))
+
+    #::: plot (hexbin is more robust than kde for narrow/bounded posteriors)
+    ndim = len(fitkeys_list)
+    az.rcParams['plot.max_subplots'] = max(ndim * ndim + 1, 40)
+    axs = az.plot_pair(
+        idata,
+        kind='hexbin',
+        marginals=True,
+        labeller=labeller,
+        reference_values=ref_dict,
+        reference_values_kwargs={'color': 'red', 'linestyle': '--', 'lw': 1.5},
+        gridsize=30,
+        hexbin_kwargs={'cmap': 'Blues'},
+        marginal_kwargs={'color': '#1f77b4'},
+        point_estimate='median',
+    )
+    fig = axs.ravel()[0].get_figure() if hasattr(axs, 'ravel') else plt.gcf()
+
+    #::: add titles on diagonal: label = median +/- errors
+    fs_title = max(5, 10 - ndim // 8)
+    for i, key in enumerate(fitkeys_list):
+        med = np.median(samples[:, i])
+        lo, hi = np.percentile(samples[:, i], [15.865, 84.135])
+        value = round_tex(med, med - lo, hi - med)
+        title = labels[i] + '\n' + r'$= ' + value + '$'
+        axs[i, i].set_title(title, fontsize=fs_title, pad=3)
+
     return fig
 
 

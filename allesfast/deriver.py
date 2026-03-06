@@ -27,9 +27,8 @@ import os
 #import collections
 import numpy as np
 import matplotlib.pyplot as plt
-from matplotlib.ticker import ScalarFormatter
 import pickle
-from corner import corner
+import arviz as az
 from tqdm import tqdm 
 from astropy.constants import M_earth, M_jup, M_sun, R_earth, R_jup, R_sun, au
 import copy
@@ -722,65 +721,54 @@ def derive(samples, mode):
         #=====================================================================
         if 'combined_A_density' in names: names.remove('combined_A_density') #has (N_companions x N_dims) dimensions, thus does not match the rest
         
-        #::: clean up any isolated NaN's before calling corner
+        #::: clean up any isolated NaN's before plotting
         for name in names:
             median = np.nanmedian(derived_samples[name])
             ind = np.where(np.isnan(derived_samples[name]))
             derived_samples[name][ind] = median
 
-        #::: prep the matrix for corner
-        x = np.column_stack([ derived_samples[name] for name in names ])
-        fontsize = np.min(( 24. + 0.5*(len(names)), 40 ))
-        
-        fig = corner(x,
-                     range = [0.999]*len(names),
-                     labels = names,
-                     quantiles=[0.15865, 0.5, 0.84135],
-                     show_titles=True, 
-                     label_kwargs={"fontsize":fontsize, "rotation":45, "horizontalalignment":'right'},
-                     max_n_ticks=3)
-        caxes = np.reshape(np.array(fig.axes), (len(names),len(names)))
-        
-        #::: set allesfast titles
-        for i, name in enumerate(names): 
-            
-            ll, median, ul = np.nanpercentile(derived_samples[name], [15.865, 50., 84.135])
-            value = round_tex(median, median-ll, ul-median)
-            ctitle = r'' + labels[i] + '\n' + r'$=' + value + '$'
-            if len(names)>1:
-                # caxes[i,i].set_title(ctitle)
-                caxes[i,i].set_title(ctitle, fontsize=fontsize, rotation=45, horizontalalignment='left')
-                for i in range(caxes.shape[0]):
-                    for j in range(caxes.shape[1]):
-                        caxes[i,j].xaxis.set_label_coords(0.5, -0.5)
-                        caxes[i,j].yaxis.set_label_coords(-0.5, 0.5)
-            
-                        if i==(caxes.shape[0]-1): 
-                            fmt = ScalarFormatter(useOffset=False)
-                            caxes[i,j].xaxis.set_major_formatter(fmt)
-                        if (i>0) and (j==0):
-                            fmt = ScalarFormatter(useOffset=False)
-                            caxes[i,j].yaxis.set_major_formatter(fmt)
-                            
-            #            for tick in caxes[i,j].xaxis.get_major_ticks(): tick.label.set_fontsize(24) 
-            #            for tick in caxes[i,j].yaxis.get_major_ticks(): tick.label.set_fontsize(24)    
-            else:
-                caxes.set_title(ctitle)
-                caxes.xaxis.set_label_coords(0.5, -0.5)
-                caxes.yaxis.set_label_coords(-0.5, 0.5)
-        
-        dpi = np.max(( 100. - len(names), 50 ))
-        #try: #some matplitlib versions cannot handle jpg
-        #    fig.savefig( os.path.join(config.BASEMENT.outdir,mode+'_derived_corner.jpg'), dpi=dpi, bbox_inches='tight' )
-        #except:
-        #    fig.savefig( os.path.join(config.BASEMENT.outdir,mode+'_derived_corner.png'), bbox_inches='tight' )
+        #::: subsample for speed
+        n_samples = len(derived_samples[names[0]])
+        if n_samples > 10000:
+            idx = np.random.choice(n_samples, 10000, replace=False)
+        else:
+            idx = np.arange(n_samples)
+
+        #::: build arviz InferenceData
+        var_dict = {name: derived_samples[name][idx][np.newaxis, :] for name in names}
+        idata = az.from_dict(posterior=var_dict)
+
+        #::: plot with arviz (hexbin is more robust than kde for narrow posteriors)
+        az.rcParams['plot.max_subplots'] = max(len(names) ** 2 + 1, 40)
+        axs = az.plot_pair(
+            idata,
+            kind='hexbin',
+            marginals=True,
+            gridsize=30,
+            hexbin_kwargs={'cmap': 'Blues'},
+            marginal_kwargs={'color': '#1f77b4'},
+            point_estimate='median',
+        )
+        fig = axs.ravel()[0].get_figure() if hasattr(axs, 'ravel') else plt.gcf()
+
+        #::: add titles on diagonal: name = median +/- errors
+        n_derived = len(names)
+        fs_title = max(5, 10 - n_derived // 8)
+        for i, name in enumerate(names):
+            lo, med, hi = np.nanpercentile(derived_samples[name], [15.865, 50., 84.135])
+            value = round_tex(med, med - lo, hi - med)
+            title = name + '\n' + r'$= ' + value + '$'
+            axs[i, i].set_title(title, fontsize=fs_title, pad=3)
+
+        corner_path = os.path.join(config.BASEMENT.outdir, mode+'_derived_corner.pdf')
+        fig.savefig(corner_path, bbox_inches='tight')
         plt.close(fig)
-        
-        
+
+
         #=====================================================================
         #::: finish
         #=====================================================================
-        logprint('\nSaved '+mode+'_derived_corner.pdf')
+        logprint('\nSaved '+corner_path)
         
         
     else:
