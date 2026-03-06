@@ -302,7 +302,7 @@ def update_params(theta):
 
 
     #=========================================================================
-    #::: rsuma from Kepler's third law (when not a free parameter)
+    #::: rsuma from Kepler's third law (always derived, never a free parameter)
     #::: a^3 = G M_star P^2 / (4 pi^2)
     #::: rsuma = R_star * (1 + rr) / a
     #=========================================================================
@@ -312,15 +312,14 @@ def update_params(theta):
     _day_s   = 86400.0     # s/day
 
     for companion in config.BASEMENT.settings['companions_all']:
-        if (companion+'_rsuma') not in config.BASEMENT.fitkeys:
-            try:
-                M_kg = params['A_mstar'] * _Msun_kg
-                R_m  = params['A_rstar'] * _Rsun_m
-                P_s  = params[companion+'_period'] * _day_s
-                a_m  = (_G_SI * M_kg * P_s**2 / (4. * np.pi**2))**(1./3.)
-                params[companion+'_rsuma'] = R_m * (1. + params[companion+'_rr']) / a_m
-            except Exception:
-                pass
+        try:
+            M_kg = params['A_mstar'] * _Msun_kg
+            R_m  = params['A_rstar'] * _Rsun_m
+            P_s  = params[companion+'_period'] * _day_s
+            a_m  = (_G_SI * M_kg * P_s**2 / (4. * np.pi**2))**(1./3.)
+            params[companion+'_rsuma'] = R_m * (1. + params[companion+'_rr']) / a_m
+        except Exception:
+            pass
 
 
     #=========================================================================

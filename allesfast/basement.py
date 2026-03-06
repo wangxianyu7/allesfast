@@ -800,7 +800,6 @@ class Basement():
                 
                 #::: frequently used parameters
                 validate(companion+'_rr', None, 0., np.inf)
-                validate(companion+'_rsuma', None, 0., np.inf)
                 validate(companion+'_cosi', 0., 0., 1.)
                 validate(companion+'_epoch', 0., -np.inf, np.inf)
                 validate(companion+'_period', 0., 0., np.inf)
@@ -1023,6 +1022,16 @@ class Basement():
 
 
         #==========================================================================
+        #::: rsuma is always derived from Kepler's 3rd law; never a free parameter
+        for companion in self.settings['companions_all']:
+            _rsuma_key = companion + '_rsuma'
+            if _rsuma_key in self.fitkeys:
+                raise ValueError(
+                    f'{_rsuma_key} must not be a free parameter. '
+                    f'Remove it from params.csv; it is always derived from '
+                    f'A_mstar, A_rstar, and {companion}_period via Kepler\'s 3rd law.'
+                )
+
         #::: luser proof: check if all initial guesses lie within their bounds
         #==========================================================================
         #TODO: make this part of the validate() function
