@@ -70,6 +70,12 @@ def get_stellar_row_from_params(params):
 
     rstar, rkey = _get_value(params, ("A_rstar", "R_star"))
     mstar, mkey = _get_value(params, ("A_mstar", "M_star"))
+    # logmstar fallback: derive mstar from A_logmstar if A_mstar not present
+    if mstar is None and params is not None:
+        logmstar = _to_float(params.get("A_logmstar", None))
+        if logmstar is not None:
+            mstar = 10.0 ** logmstar
+            mkey = "A_logmstar"
     teff, tkey = _get_value(params, ("A_teff", "Teff_star"))
 
     if rstar is not None:
