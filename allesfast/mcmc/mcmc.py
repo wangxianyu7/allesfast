@@ -179,7 +179,9 @@ def run_de_optimization(s):
         logprint(f"  Loading: {pop_file}")
         df  = pd.read_csv(pop_file)
         pop = df[config.BASEMENT.fitkeys].values
-        _best_df = pd.read_csv(best_file, comment='#')
+        _best_df = pd.read_csv(best_file)
+        # strip leading '#' from header (params.csv format has '#name,...')
+        _best_df.columns = [c.lstrip('#').strip() for c in _best_df.columns]
         # support both old format (parameter,value) and new params.csv format (name,value,...)
         _name_col = 'parameter' if 'parameter' in _best_df.columns else 'name'
         best_row = _best_df.set_index(_name_col)['value']
