@@ -273,7 +273,7 @@ def _save_de_results(de):
     """Save DE population to CSV, generate fit plots, and optionally a corner plot."""
     import pandas as pd
     import matplotlib.pyplot as plt
-    from corner import corner
+    import arviz as az
     import seaborn as sns
     sns.set(context='paper', style='ticks', palette='deep',
             font='sans-serif', font_scale=1.5, color_codes=True)
@@ -308,14 +308,22 @@ def _save_de_results(de):
         logprint(f"  WARNING: save_modelfiles failed – {e}")
 
     if config.BASEMENT.settings.get('cornerplot', False):
-        # --- corner plot of the final population, weighted by lnprob ---
+        # --- corner plot of the final population (arviz hexbin) ---
         try:
-            weights = np.exp(lnprobs - lnprobs.max())   # normalised, numerically safe
-            weights /= weights.sum()
-            fig = corner(pop, labels=list(fitkeys), weights=weights,
-                         show_titles=True, title_fmt='.4f',
-                         quantiles=[0.16, 0.5, 0.84],
-                         plot_datapoints=True, plot_density=True)
+            ndim = len(fitkeys)
+            az.rcParams['plot.max_subplots'] = max(ndim * ndim + 1, 40)
+            var_dict = {key: pop[np.newaxis, :, i] for i, key in enumerate(fitkeys)}
+            idata = az.from_dict(posterior=var_dict)
+            axs = az.plot_pair(
+                idata,
+                kind='hexbin',
+                marginals=True,
+                gridsize=30,
+                hexbin_kwargs={'cmap': 'Blues'},
+                marginal_kwargs={'color': '#1f77b4'},
+                point_estimate='median',
+            )
+            fig = axs.ravel()[0].get_figure() if hasattr(axs, 'ravel') else plt.gcf()
             fig.suptitle('DE pre-optimisation population\n'
                          f'(best lnprob = {lnprobs[best_idx]:.4f}, '
                          f'Δlnprob = {np.ptp(lnprobs):.4f})',
