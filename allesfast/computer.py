@@ -313,7 +313,10 @@ def update_params(theta):
 
     for companion in config.BASEMENT.settings['companions_all']:
         try:
-            M_kg = params['A_mstar'] * _Msun_kg
+            if 'A_mstar' in params:
+                M_kg = params['A_mstar'] * _Msun_kg
+            else:
+                M_kg = 10.0 ** params['A_logmstar'] * _Msun_kg
             R_m  = params['A_rstar'] * _Rsun_m
             P_s  = params[companion+'_period'] * _day_s
             a_m  = (_G_SI * M_kg * P_s**2 / (4. * np.pi**2))**(1./3.)
@@ -1425,8 +1428,8 @@ def calculate_external_priors(params):
             lnp = -np.inf
         
         #::: avoid collisions
-        if (params[companion+'_rsuma'] is not None) \
-            and not ((params[companion+'_ecc'] < (1. - params[companion+'_rsuma']))): 
+        if (params.get(companion+'_rsuma') is not None) \
+            and not ((params[companion+'_ecc'] < (1. - params[companion+'_rsuma']))):
             lnp = -np.inf
             
         # ::: avoid tidal circularizaion
