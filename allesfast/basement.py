@@ -554,10 +554,11 @@ class Basement():
             elif inst in self.settings['inst_rv']: key='rv'
             elif inst in self.settings['inst_rv2']: key='rv2'
             
-            #::: default
-            #::: if the user gives no baseline, the default is 'none'
-            if 'baseline_'+key+'_'+inst not in self.settings: 
-                self.settings['baseline_'+key+'_'+inst] = 'none'
+            #::: require the user to explicitly set the baseline
+            if 'baseline_'+key+'_'+inst not in self.settings:
+                raise ValueError("No baseline specified for instrument '"+inst+"' (key='"+key+"'). "
+                                 "Please add 'baseline_"+key+"_"+inst+"' to your settings.csv "
+                                 "(e.g. 'none', 'hybrid_offset', 'hybrid_poly_1', etc.).")
 
             #::: hybrid_spline
             #::: the user can define the s value directly, e.g. as "hybrid_spline 0.001"
