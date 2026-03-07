@@ -152,12 +152,21 @@ def _star_from_params(params):
         parallax = params.get("A_parallax", None)
         if parallax is not None and float(parallax) > 0:
             distance = 1000.0 / float(parallax)   # mas → pc
+    # logmstar support
+    mstar = params.get("A_mstar", None)
+    if mstar is None:
+        logmstar = params.get("A_logmstar", None)
+        if logmstar is not None:
+            mstar = 10.0 ** float(logmstar)
     return StellarInputs(
         teff=params.get("A_teff", None),
         logg=params.get("A_logg", None),
         feh=params.get("A_feh", None),
         rstar=params.get("A_rstar", None),
-        mstar=params.get("A_mstar", None),
+        teffsed=params.get("A_teffsed", None),
+        rstarsed=params.get("A_rstarsed", None),
+        fehsed=params.get("A_fehsed", None),
+        mstar=mstar,
         eep=params.get("A_eep", None),
         age=params.get("A_age", None),
         av=params.get("A_av", None),
@@ -171,12 +180,20 @@ def _star_B_from_params(params):
         parallax = params.get("B_parallax") or params.get("A_parallax", None)
         if parallax is not None and float(parallax) > 0:
             distance = 1000.0 / float(parallax)
+    mstar = params.get("B_mstar", None)
+    if mstar is None:
+        logmstar = params.get("B_logmstar", None)
+        if logmstar is not None:
+            mstar = 10.0 ** float(logmstar)
     return StellarInputs(
         teff=params.get("B_teff", None),
         logg=params.get("B_logg", None),
         feh=params.get("B_feh") or params.get("A_feh", None),
         rstar=params.get("B_rstar", None),
-        mstar=params.get("B_mstar", None),
+        teffsed=params.get("B_teffsed", None),
+        rstarsed=params.get("B_rstarsed", None),
+        fehsed=params.get("B_fehsed", None),
+        mstar=mstar,
         eep=params.get("B_eep", None),
         age=params.get("B_age", None),
         av=params.get("B_av") or params.get("A_av", None),
@@ -221,41 +238,54 @@ def compute_sed_modeldata(params, datadir, errscale=None, sed_file=None):
         return None
 
     if errscale is None:
-        try:
-            from .. import config as _cfg
-            _esc = _cfg.BASEMENT.settings.get('sed_errscale', 1.0)
-            errscale = float(np.asarray(_esc).flat[0])
-        except Exception:
-            errscale = 1.0
+        _esc = params.get('A_sed_errscale', None)
+        if _esc is not None:
+            errscale = float(_esc)
+        else:
+            try:
+                from .. import config as _cfg
+                _esc = _cfg.BASEMENT.settings.get('sed_errscale', 1.0)
+                errscale = float(np.asarray(_esc).flat[0])
+            except Exception:
+                errscale = 1.0
 
     gravity_sun = 27420.011
     star_B = _star_B_from_params(params)
     has_B = all(getattr(star_B, k) is not None
                 for k in ('teff', 'rstar', 'feh', 'av', 'distance', 'mstar'))
 
+    # Use teffsed/rstarsed/fehsed for SED (matching sed_chi2 in mist_sed.py)
+    def _sed_val(star, sed_attr, fallback_attr):
+        v = getattr(star, sed_attr, None)
+        return float(v) if v is not None else float(getattr(star, fallback_attr))
+
     if has_B:
         nstars = 2
-        teff_arr  = np.array([float(star_A.teff),  float(star_B.teff)])
+        teff_arr  = np.array([_sed_val(star_A, 'teffsed', 'teff'),  _sed_val(star_B, 'teffsed', 'teff')])
+        rstar_sed = np.array([_sed_val(star_A, 'rstarsed', 'rstar'), _sed_val(star_B, 'rstarsed', 'rstar')])
         logg_arr  = np.array([
-            np.log10(gravity_sun * float(star_A.mstar) / float(star_A.rstar) ** 2),
-            np.log10(gravity_sun * float(star_B.mstar) / float(star_B.rstar) ** 2),
+            np.log10(gravity_sun * float(star_A.mstar) / rstar_sed[0] ** 2),
+            np.log10(gravity_sun * float(star_B.mstar) / rstar_sed[1] ** 2),
         ])
-        feh_arr   = np.array([float(star_A.feh),   float(star_B.feh)])
+        feh_arr   = np.array([_sed_val(star_A, 'fehsed', 'feh'), _sed_val(star_B, 'fehsed', 'feh')])
         av_arr    = np.array([float(star_A.av),     float(star_B.av)])
         dist_arr  = np.array([float(star_A.distance), float(star_B.distance)])
         lstar_arr = np.array([
-            float(star_A.rstar) ** 2 * (float(star_A.teff) / 5772.0) ** 4,
-            float(star_B.rstar) ** 2 * (float(star_B.teff) / 5772.0) ** 4,
+            rstar_sed[0] ** 2 * (teff_arr[0] / 5772.0) ** 4,
+            rstar_sed[1] ** 2 * (teff_arr[1] / 5772.0) ** 4,
         ])
     else:
         nstars = 1
-        logg_A = np.log10(gravity_sun * float(star_A.mstar) / float(star_A.rstar) ** 2)
-        teff_arr  = np.array([float(star_A.teff)])
+        teff_sed_A  = _sed_val(star_A, 'teffsed', 'teff')
+        rstar_sed_A = _sed_val(star_A, 'rstarsed', 'rstar')
+        feh_sed_A   = _sed_val(star_A, 'fehsed', 'feh')
+        logg_A = np.log10(gravity_sun * float(star_A.mstar) / rstar_sed_A ** 2)
+        teff_arr  = np.array([teff_sed_A])
         logg_arr  = np.array([logg_A])
-        feh_arr   = np.array([float(star_A.feh)])
+        feh_arr   = np.array([feh_sed_A])
         av_arr    = np.array([float(star_A.av)])
         dist_arr  = np.array([float(star_A.distance)])
-        lstar_arr = np.array([float(star_A.rstar) ** 2 * (float(star_A.teff) / 5772.0) ** 4])
+        lstar_arr = np.array([rstar_sed_A ** 2 * (teff_sed_A / 5772.0) ** 4])
 
     sed_data = read_sed_file(sed_file, nstars=nstars)
     chi2, blendmag, _, _ = mistmultised(
@@ -312,10 +342,14 @@ def compute_sed_modeldata(params, datadir, errscale=None, sed_file=None):
     return result
 
 
-def make_sed_plot(params, datadir, outdir, outfile="stellar_sed_fit.pdf", errscale=1.0, sed_file=None):
+def make_sed_plot(params, datadir, outdir, outfile="stellar_sed_fit.pdf", errscale=None, sed_file=None):
     star_A = _star_from_params(params)
     if any(v is None for v in [star_A.teff, star_A.rstar, star_A.feh, star_A.av, star_A.distance, star_A.mstar]):
         return None
+
+    # Use A_sed_errscale from params if not explicitly passed
+    if errscale is None:
+        errscale = float(params.get('A_sed_errscale', 1.0))
 
     # Resolve SED file
     if sed_file is None:
@@ -330,6 +364,11 @@ def make_sed_plot(params, datadir, outdir, outfile="stellar_sed_fit.pdf", errsca
 
     gravity_sun = 27420.011
 
+    # Use teffsed/rstarsed/fehsed for SED (matching sed_chi2 in mist_sed.py)
+    def _sed_val(star, sed_attr, fallback_attr):
+        v = getattr(star, sed_attr, None)
+        return float(v) if v is not None else float(getattr(star, fallback_attr))
+
     # Check for Star B
     star_B = _star_B_from_params(params)
     has_B = all(getattr(star_B, k) is not None
@@ -337,27 +376,31 @@ def make_sed_plot(params, datadir, outdir, outfile="stellar_sed_fit.pdf", errsca
 
     if has_B:
         nstars = 2
-        teff_arr  = np.array([float(star_A.teff),  float(star_B.teff)])
+        teff_arr  = np.array([_sed_val(star_A, 'teffsed', 'teff'),  _sed_val(star_B, 'teffsed', 'teff')])
+        rstar_sed = np.array([_sed_val(star_A, 'rstarsed', 'rstar'), _sed_val(star_B, 'rstarsed', 'rstar')])
         logg_arr  = np.array([
-            np.log10(gravity_sun * float(star_A.mstar) / float(star_A.rstar) ** 2),
-            np.log10(gravity_sun * float(star_B.mstar) / float(star_B.rstar) ** 2),
+            np.log10(gravity_sun * float(star_A.mstar) / rstar_sed[0] ** 2),
+            np.log10(gravity_sun * float(star_B.mstar) / rstar_sed[1] ** 2),
         ])
-        feh_arr   = np.array([float(star_A.feh),   float(star_B.feh)])
+        feh_arr   = np.array([_sed_val(star_A, 'fehsed', 'feh'), _sed_val(star_B, 'fehsed', 'feh')])
         av_arr    = np.array([float(star_A.av),     float(star_B.av)])
         dist_arr  = np.array([float(star_A.distance), float(star_B.distance)])
         lstar_arr = np.array([
-            float(star_A.rstar) ** 2 * (float(star_A.teff) / 5772.0) ** 4,
-            float(star_B.rstar) ** 2 * (float(star_B.teff) / 5772.0) ** 4,
+            rstar_sed[0] ** 2 * (teff_arr[0] / 5772.0) ** 4,
+            rstar_sed[1] ** 2 * (teff_arr[1] / 5772.0) ** 4,
         ])
     else:
         nstars = 1
-        logg_A = np.log10(gravity_sun * float(star_A.mstar) / float(star_A.rstar) ** 2)
-        teff_arr  = np.array([float(star_A.teff)])
+        teff_sed_A  = _sed_val(star_A, 'teffsed', 'teff')
+        rstar_sed_A = _sed_val(star_A, 'rstarsed', 'rstar')
+        feh_sed_A   = _sed_val(star_A, 'fehsed', 'feh')
+        logg_A = np.log10(gravity_sun * float(star_A.mstar) / rstar_sed_A ** 2)
+        teff_arr  = np.array([teff_sed_A])
         logg_arr  = np.array([logg_A])
-        feh_arr   = np.array([float(star_A.feh)])
+        feh_arr   = np.array([feh_sed_A])
         av_arr    = np.array([float(star_A.av)])
         dist_arr  = np.array([float(star_A.distance)])
-        lstar_arr = np.array([float(star_A.rstar) ** 2 * (float(star_A.teff) / 5772.0) ** 4])
+        lstar_arr = np.array([rstar_sed_A ** 2 * (teff_sed_A / 5772.0) ** 4])
 
     sed_data = read_sed_file(sed_file, nstars=nstars)
     chi2, blendmag, _, _ = mistmultised(
@@ -386,13 +429,16 @@ def make_sed_plot(params, datadir, outdir, outfile="stellar_sed_fit.pdf", errsca
         lf = _apply_extinction(lf, float(av))
         return lf
 
-    atm_A = _get_atmosphere(star_A.teff, logg_arr[0], star_A.feh,
-                            star_A.rstar, star_A.distance, star_A.av)
-    atm_B = _get_atmosphere(star_B.teff, logg_arr[1] if has_B else logg_arr[0],
-                            star_B.feh if has_B else star_A.feh,
-                            star_B.rstar if has_B else star_A.rstar,
-                            star_B.distance if has_B else star_A.distance,
-                            star_B.av if has_B else star_A.av) if has_B else None
+    # Use SED-specific values for atmosphere (consistent with mistmultised call above)
+    atm_A = _get_atmosphere(teff_arr[0], logg_arr[0], feh_arr[0],
+                            lstar_arr[0]**0.5 * (5772.0 / teff_arr[0])**2,  # rstar_sed
+                            dist_arr[0], av_arr[0])
+    if has_B:
+        atm_B = _get_atmosphere(teff_arr[1], logg_arr[1], feh_arr[1],
+                                lstar_arr[1]**0.5 * (5772.0 / teff_arr[1])**2,
+                                dist_arr[1], av_arr[1])
+    else:
+        atm_B = None
 
     # ------------------------------------------------------------------ figure
     fig = plt.figure(figsize=(10, 8))
@@ -408,8 +454,8 @@ def make_sed_plot(params, datadir, outdir, outfile="stellar_sed_fit.pdf", errsca
         # Show individual components and their sum
         combined = atm_A + atm_B
         for lf, color, label in [
-            (atm_A,    'black',       f'Star A  ({float(star_A.teff):.0f} K)'),
-            (atm_B,    'steelblue',   f'Star B  ({float(star_B.teff):.0f} K)'),
+            (atm_A,    'black',       f'Star A  ({teff_arr[0]:.0f} K)'),
+            (atm_B,    'steelblue',   f'Star B  ({teff_arr[1]:.0f} K)'),
             (combined, 'gray',        'Combined'),
         ]:
             lf_s = uniform_filter1d(lf, size=10)
@@ -448,9 +494,9 @@ def make_sed_plot(params, datadir, outdir, outfile="stellar_sed_fit.pdf", errsca
     ax_data.set_xlim(0.3, 30)
     ax_data.set_ylabel(r'log $\lambda F_\lambda$ (erg s$^{-1}$ cm$^{-2}$)')
     title_str = (
-        rf'SED fit  $T_{{\rm eff;A}}={float(star_A.teff):.0f}$ K'
-        + (rf', $T_{{\rm eff;B}}={float(star_B.teff):.0f}$ K' if has_B else '')
-        + rf', $A_V={float(star_A.av):.3f}$, $\chi^2={chi2:.2f}$'
+        rf'SED fit  $T_{{\rm eff;A}}={teff_arr[0]:.0f}$ K'
+        + (rf', $T_{{\rm eff;B}}={teff_arr[1]:.0f}$ K' if has_B else '')
+        + rf', $A_V={av_arr[0]:.3f}$, $\chi^2={chi2:.2f}$'
     )
     ax_data.set_title(title_str)
     ax_data.legend(loc='upper right', frameon=False, fontsize=9)

@@ -1,7 +1,6 @@
 #name,value,fit,bounds,label,unit
 #companion b astrophysical params
 b_rr,0.1170426535,1,uniform 0.0 0.3,Rp/Rs,
-b_rsuma,0.08377452855,1,uniform 0.0 0.2,(Rs+Rp)/a,
 b_cosi,0.03934941426,1,uniform 0.0 1.0,cos_i,
 b_epoch,2457588.2850899999,1,uniform 2457587.2850899999 2457589.2850899999,T0_b,BJD
 b_period,6.569188,1,uniform 6.469188 6.669188,P_b,d
