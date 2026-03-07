@@ -240,7 +240,9 @@ def run_de_optimization(s):
         if show_progress:
             from tqdm import tqdm
             bar = tqdm(total=ngen, desc='DE', unit='gen')
+        deadline = s.get('_deadline', None)
         ngen_done = 0
+        timed_out = False
         for _, best_fit in de(ngen):
             ngen_done += 1
             if bar is not None:
@@ -253,9 +255,14 @@ def run_de_optimization(s):
                     _postfix['n_inf'] = _n_inf
                 bar.set_postfix(**_postfix)
                 bar.update(1)
+            if deadline is not None and timer() >= deadline:
+                timed_out = True
+                break
         if bar is not None:
             bar.close()
-        if ngen_done < ngen:
+        if timed_out:
+            logprint(f"  DE stopped early at generation {ngen_done}/{ngen}: time limit reached.")
+        elif ngen_done < ngen:
             logprint(f"  DE converged early at generation {ngen_done}/{ngen} (Δlnprob < {de_dlnprob})")
     finally:
         if pool is not None:
@@ -716,12 +723,35 @@ def _run_emcee(s, p0_de=None, p0_best=None):
                 sampler.reset()
 
         logprint("\nRunning full MCMC")
-        sampler.run_mcmc(
-            p0,
-            int((s['mcmc_total_steps'] - already_completed_steps) / s['mcmc_thin_by']),
-            thin_by=int(s['mcmc_thin_by']),
-            progress=s['print_progress'],
-        )
+        deadline = s.get('_deadline', None)
+        remaining_steps = int((s['mcmc_total_steps'] - already_completed_steps) / s['mcmc_thin_by'])
+        if deadline is None:
+            sampler.run_mcmc(
+                p0,
+                remaining_steps,
+                thin_by=int(s['mcmc_thin_by']),
+                progress=s['print_progress'],
+            )
+        else:
+            # Run in chunks of 100 thinned steps so we can check the deadline
+            chunk = 100
+            done = 0
+            pos = p0
+            while done < remaining_steps:
+                if timer() >= deadline:
+                    logprint(f"\n  emcee stopped early at {done}/{remaining_steps} thinned steps: time limit reached.")
+                    break
+                n = min(chunk, remaining_steps - done)
+                sampler.run_mcmc(pos, n, thin_by=int(s['mcmc_thin_by']),
+                                 progress=False, skip_initial_state_check=True)
+                pos = sampler.get_last_sample()
+                done += n
+                if s['print_progress']:
+                    pct = 100.0 * done / remaining_steps
+                    print(f"\r  emcee {pct:.1f}% ({done}/{remaining_steps} steps)   ",
+                          end="", flush=True)
+            if s['print_progress']:
+                print()
         return sampler
 
     _moves = [(emcee.moves.DEMove(), 0.8), (emcee.moves.DESnookerMove(), 0.2)]
@@ -767,6 +797,7 @@ def _run_demcpt(s, p0_de=None):
     logprint(f'  nchains={nchains}  ntemps={ntemps}  target_thinned_steps={nsteps}  nthin={nthin}')
     logprint(f'  maxgr={maxgr}  mintz={mintz}  nworkers={nworkers}')
 
+    deadline = s.get('_deadline', None)
     if continue_old_run:
         logprint(f'\nResuming from {save_file}')
         sampler   = DEMCPTSampler.load(save_file, mcmc_lnprob)
@@ -774,6 +805,7 @@ def _run_demcpt(s, p0_de=None):
             nsteps=nsteps, nthin=nthin, scale=config.BASEMENT.init_err,
             progress=s.get('print_progress', True), nworkers=nworkers,
             save_every=max(nsteps // 10, 1), save_file=save_file,
+            deadline=deadline,
         )
     else:
         p0_start = p0_de if p0_de is not None else config.BASEMENT.theta_0
@@ -786,6 +818,7 @@ def _run_demcpt(s, p0_de=None):
             scale=config.BASEMENT.init_err,
             progress=s.get('print_progress', True), nworkers=nworkers,
             save_every=max(nsteps // 10, 1), save_file=save_file,
+            deadline=deadline,
         )
 
     if converged:
@@ -825,6 +858,14 @@ def mcmc_fit(datadir, method=None):
         method = s.get('mcmc_sampler', 'emcee')
 
     t0 = timer()
+
+    # Set a wall-clock deadline if max_hours is specified
+    max_hours = s.get('max_hours', None)
+    if max_hours is not None:
+        s['_deadline'] = t0 + max_hours * 3600.
+        logprint(f"\nTime limit: {max_hours} hours (deadline in {max_hours:.2f} h)")
+    else:
+        s['_deadline'] = None
 
     de_result = run_de_optimization(s)
     de_best   = de_result[0] if de_result is not None else None
@@ -882,6 +923,13 @@ def de_fit(datadir):
     s = config.BASEMENT.settings
 
     t0 = timer()
+
+    max_hours = s.get('max_hours', None)
+    if max_hours is not None:
+        s['_deadline'] = t0 + max_hours * 3600.
+        logprint(f"\nTime limit: {max_hours} hours (deadline in {max_hours:.2f} h)")
+    else:
+        s['_deadline'] = None
 
     de_result = run_de_optimization(s)
     de_best   = de_result[0] if de_result is not None else None

@@ -415,6 +415,10 @@ class Basement():
             self.settings['mcmc_maxgr'] = 1.01
         if 'mcmc_mintz' not in self.settings:
             self.settings['mcmc_mintz'] = 1000
+        if 'max_hours' in self.settings:
+            self.settings['max_hours'] = float(self.settings['max_hours'])
+        else:
+            self.settings['max_hours'] = None  # no time limit
 
         #::: make sure these are integers
         for key in ['mcmc_nwalkers','mcmc_pre_run_loops','mcmc_pre_run_steps',

@@ -31,6 +31,7 @@ Usage
 import numpy as np
 from multiprocessing import Pool
 import h5py
+from time import time as _timer
 
 try:
     from numba import njit
@@ -279,7 +280,7 @@ class DEMCPTSampler:
 
     def run(self, p0, nsteps, nthin=1, scale=None, progress=True,
             check_every=None, npass_required=6, nworkers=1,
-            save_every=0, save_file=None):
+            save_every=0, save_file=None, deadline=None):
         """
         Run the sampler.
 
@@ -466,6 +467,12 @@ class DEMCPTSampler:
                                 break
                         else:
                             npass = 0
+
+                if deadline is not None and _timer() >= deadline:
+                    final_step = i + 1
+                    if progress:
+                        print(f"\n  Time limit reached at step {final_step}/{nsteps}. Stopping.")
+                    break
         finally:
             if pool is not None:
                 pool.close()
@@ -477,6 +484,8 @@ class DEMCPTSampler:
         if progress:
             if converged:
                 print(f"\n  Converged at step {final_step}/{nsteps}.")
+            elif deadline is not None and final_step < nsteps:
+                pass  # already printed above
             else:
                 print(f"\n  Reached max steps ({nsteps}). NOT converged.")
 
@@ -489,7 +498,7 @@ class DEMCPTSampler:
 
     def _run_continue(self, nsteps, nthin=1, scale=None, progress=True,
                       check_every=None, npass_required=6, nworkers=1,
-                      save_every=0, save_file=None):
+                      save_every=0, save_file=None, deadline=None):
         """Continue sampling from an existing chain."""
         if self._chain is None or self._log_prob is None:
             raise RuntimeError("No existing chain to continue. Call run() or load() first.")
@@ -633,6 +642,11 @@ class DEMCPTSampler:
                             npass = 0
                 if converged:
                     break
+                if deadline is not None and _timer() >= deadline:
+                    final_step = i + 1
+                    if progress:
+                        print(f"\n  Time limit reached at step {final_step}/{nsteps}. Stopping.")
+                    break
         finally:
             if pool is not None:
                 pool.close()
@@ -644,6 +658,8 @@ class DEMCPTSampler:
         if progress:
             if converged:
                 print(f"\n  Converged at step {final_step}/{nsteps}.")
+            elif deadline is not None and final_step < nsteps:
+                pass  # already printed above
             else:
                 print(f"\n  Reached max steps ({nsteps}). NOT converged.")
 
