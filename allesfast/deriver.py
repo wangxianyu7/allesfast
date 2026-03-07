@@ -253,16 +253,43 @@ def derive(samples, mode):
     def arcsin_d(x): return np.rad2deg(np.arcsin(x))
     def arccos_d(x): return np.rad2deg(np.arccos(x))
 
+    #==========================================================================
+    #::: derive rsuma from Kepler's 3rd law for each companion
+    #::: (rsuma is never a free parameter; must be computed here for deriver)
+    #==========================================================================
+    _G_SI    = 6.674e-11
+    _Msun_kg = 1.989e30
+    _Rsun_m  = 6.957e8
+    _day_s   = 86400.0
+    derived_rsuma = {}
+    for cc in companions:
+        try:
+            mstar_samples = get_params('A_mstar')
+            if np.all(np.isnan(mstar_samples)):
+                logmstar = get_params('A_logmstar')
+                mstar_samples = 10.0 ** logmstar
+            rstar_samples = get_params('A_rstar')
+            period_samples = get_params(cc+'_period')
+            rr_samples = get_params(cc+'_rr')
+            M_kg = mstar_samples * _Msun_kg
+            R_m  = rstar_samples * _Rsun_m
+            P_s  = period_samples * _day_s
+            a_m  = (_G_SI * M_kg * P_s**2 / (4. * np.pi**2))**(1./3.)
+            derived_rsuma[cc] = R_m * (1. + rr_samples) / a_m
+        except Exception:
+            derived_rsuma[cc] = np.nan
+
     derived_samples = {}
     for cc in companions:
         companion = cc
-        
+
         #----------------------------------------------------------------------
         #::: radii
         #----------------------------------------------------------------------
-        derived_samples[companion+'_R_star/a'] = get_params(companion+'_rsuma') / (1. + get_params(companion+'_rr'))
-        derived_samples[companion+'_a/R_star'] = (1. + get_params(companion+'_rr')) / get_params(companion+'_rsuma')
-        derived_samples[companion+'_R_companion/a'] = get_params(companion+'_rsuma') * get_params(companion+'_rr') / (1. + get_params(companion+'_rr'))
+        rsuma = derived_rsuma[companion]
+        derived_samples[companion+'_R_star/a'] = rsuma / (1. + get_params(companion+'_rr'))
+        derived_samples[companion+'_a/R_star'] = (1. + get_params(companion+'_rr')) / rsuma
+        derived_samples[companion+'_R_companion/a'] = rsuma * get_params(companion+'_rr') / (1. + get_params(companion+'_rr'))
         derived_samples[companion+'_R_companion_(R_earth)'] = star['R_star'] * get_params(companion+'_rr') * R_sun.value / R_earth.value #in R_earth
         derived_samples[companion+'_R_companion_(R_jup)'] = star['R_star'] * get_params(companion+'_rr') * R_sun.value / R_jup.value #in R_jup
 
