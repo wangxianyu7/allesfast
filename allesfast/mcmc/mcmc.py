@@ -228,11 +228,31 @@ def run_de_optimization(s):
 
     try:
         de_dlnprob = float(s.get('de_dlnprob', 0.01))   # early-stop threshold
+        de_nconv   = int(s.get('de_nconv', 6))         # consecutive converged generations required
         de = DiffEvol(mcmc_lnprob, de_bounds, npop=npop, maximize=True,
-                      pool=pool, min_ptp=de_dlnprob)
+                      pool=pool, min_ptp=0)            # disable internal break; we check externally
         # Seed member 0 with theta_0 so the known starting point is never lost
         de._population[0] = np.clip(config.BASEMENT.theta_0,
                                     de_bounds[:, 0], de_bounds[:, 1])
+
+        # Narrow the initial DE population around theta_0 using prior-width
+        # based scale (same logic as Amoeba), so individuals start in a
+        # sensible region instead of spanning the full prior bounds.
+        ndim = len(config.BASEMENT.theta_0)
+        _init_scale = np.empty(ndim)
+        for k, b in enumerate(config.BASEMENT.bounds):
+            if b[0] == 'uniform':
+                _init_scale[k] = (b[2] - b[1]) / 10.0
+            else:  # normal or trunc_normal
+                _init_scale[k] = 3.0 * b[2]
+        _init_scale = np.abs(_init_scale)
+        _init_scale[_init_scale == 0] = 1e-3
+
+        for idx in range(ndim):
+            center = config.BASEMENT.theta_0[idx]
+            lo = max(de_bounds[idx, 0], center - _init_scale[idx])
+            hi = min(de_bounds[idx, 1], center + _init_scale[idx])
+            de._population[1:, idx] = np.random.uniform(lo, hi, npop - 1)
 
         # --- iterate generation-by-generation so tqdm can track progress ---
         show_progress = s.get('print_progress', True)
@@ -243,18 +263,28 @@ def run_de_optimization(s):
         deadline = s.get('_deadline', None)
         ngen_done = 0
         timed_out = False
+        converged = False
+        _conv_count = 0
         for _, best_fit in de(ngen):
             ngen_done += 1
+            _fit = de._fitness
+            _fin = _fit[np.isfinite(_fit)]
+            _dlnp = np.ptp(_fin) if len(_fin) > 1 else np.inf
             if bar is not None:
-                _fit = de._fitness
-                _fin = _fit[np.isfinite(_fit)]
-                _dlnp = np.ptp(_fin) if len(_fin) > 1 else np.inf
                 _n_inf = len(_fit) - len(_fin)
-                _postfix = dict(lnprob=f'{-best_fit:.4f}', dlnp=f'{_dlnp:.4f}')
+                _postfix = dict(lnprob=f'{-best_fit:.4f}', dlnp=f'{_dlnp:.4f}',
+                                conv=f'{_conv_count}/{de_nconv}')
                 if _n_inf > 0:
                     _postfix['n_inf'] = _n_inf
                 bar.set_postfix(**_postfix)
                 bar.update(1)
+            if _dlnp < de_dlnprob:
+                _conv_count += 1
+                if _conv_count >= de_nconv:
+                    converged = True
+                    break
+            else:
+                _conv_count = 0
             if deadline is not None and timer() >= deadline:
                 timed_out = True
                 break
@@ -262,8 +292,9 @@ def run_de_optimization(s):
             bar.close()
         if timed_out:
             logprint(f"  DE stopped early at generation {ngen_done}/{ngen}: time limit reached.")
-        elif ngen_done < ngen:
-            logprint(f"  DE converged early at generation {ngen_done}/{ngen} (Δlnprob < {de_dlnprob})")
+        elif converged:
+            logprint(f"  DE converged at generation {ngen_done}/{ngen} "
+                     f"(Δlnprob < {de_dlnprob} for {de_nconv} consecutive generations)")
     finally:
         if pool is not None:
             pool.close()
@@ -447,13 +478,14 @@ def _plot_de_fit(best_theta):
 ###########################################################################
 #::: Amoeba (Nelder-Mead) optimization
 ###########################################################################
-def _amoeba_nm(func, p0, scale, ftol=1e-5, nmax=100000, progress_cb=None):
+def _amoeba_nm(func, p0, scale, ftol=1e-5, nmax=100000, nconv=6, progress_cb=None):
     """Nelder-Mead minimization — direct Python port of EXOFASTv2's exofast_amoeba.pro.
 
     Reference: Numerical Recipes, 2nd ed., Section 10.4.
 
     Convergence criterion (identical to EXOFASTv2):
       rtol = 2 * |y_hi - y_lo| / (|y_hi| + |y_lo|) < ftol
+    Must be satisfied for ``nconv`` consecutive iterations.
 
     Parameters
     ----------
@@ -462,6 +494,7 @@ def _amoeba_nm(func, p0, scale, ftol=1e-5, nmax=100000, progress_cb=None):
     scale       : (ndim,)   initial simplex displacement per dimension
     ftol        : float     fractional tolerance on function value spread
     nmax        : int       max function evaluations
+    nconv       : int       consecutive converged iterations required (default 6)
     progress_cb : callable  progress_cb(x_best, y_best, ncalls, rtol),
                             called every 100 function evaluations
 
@@ -498,6 +531,7 @@ def _amoeba_nm(func, p0, scale, ftol=1e-5, nmax=100000, progress_cb=None):
         return ytry
 
     last_report = 0
+    _conv_count = 0
     while ncalls <= nmax:
         s    = np.argsort(y)
         ilo  = s[0]    # best (lowest)
@@ -512,7 +546,11 @@ def _amoeba_nm(func, p0, scale, ftol=1e-5, nmax=100000, progress_cb=None):
             last_report = ncalls
 
         if rtol < ftol:
-            break
+            _conv_count += 1
+            if _conv_count >= nconv:
+                break
+        else:
+            _conv_count = 0
 
         # 1. Reflect worst vertex through centroid
         ytry = amotry(ihi, -1.0)
@@ -622,9 +660,10 @@ def run_amoeba_optimization(s, p0=None):
             last_ncalls[0] = ncalls
             bar.set_postfix(lnprob=f'{best_lp_seen:.4f}', rtol=f'{rtol:.2e}')
 
+    amoeba_nconv = int(s.get('amoeba_nconv', 6))
     x_best, y_best, ncalls = _amoeba_nm(
         neg_lnprob, theta_0, scale,
-        ftol=ftol, nmax=nmax, progress_cb=_progress,
+        ftol=ftol, nmax=nmax, nconv=amoeba_nconv, progress_cb=_progress,
     )
 
     if bar is not None:
