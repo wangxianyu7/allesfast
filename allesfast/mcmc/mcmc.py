@@ -196,6 +196,14 @@ def run_de_optimization(s):
 
     start_best_lnprob = mcmc_lnprob(config.BASEMENT.theta_0)
     logprint(f"  Starting lnprob: {start_best_lnprob:.4f}")
+    if not np.isfinite(start_best_lnprob):
+        logprint('\n[DEBUG] theta_0 has lnprob = -inf. Running diagnostics...')
+        _test_params = update_params(config.BASEMENT.theta_0)
+        calculate_lnlike_total(_test_params, debug=True)
+        logprint('[DEBUG] Parameter values for theta_0:')
+        for _k, _v in zip(config.BASEMENT.fitkeys, config.BASEMENT.theta_0):
+            logprint(f'  {_k} = {_v}')
+        logprint('')
     # Build [npar, 2] bounds array for DiffEvol
     de_bounds = []
     for b in config.BASEMENT.bounds:
@@ -682,6 +690,17 @@ def _run_emcee(s, p0_de=None, p0_best=None):
         for i, b in enumerate(config.BASEMENT.bounds):
             if b[0] == 'uniform':
                 p0[:, i] = np.clip(p0[:, i], b[1], b[2])
+
+        #::: diagnose if initial walkers all give -inf
+        _test_lnlike = mcmc_lnlike(p0[0])
+        if not np.isfinite(_test_lnlike):
+            logprint('\n[DEBUG] Initial walker 0 has lnprob = -inf. Running diagnostics...')
+            _test_params = update_params(p0[0])
+            calculate_lnlike_total(_test_params, debug=True)
+            logprint('[DEBUG] Parameter values for walker 0:')
+            for _k, _v in zip(config.BASEMENT.fitkeys, p0[0]):
+                logprint(f'  {_k} = {_v}')
+            logprint('')
 
         if not continue_old_run:
             for i in range(s['mcmc_pre_run_loops']):

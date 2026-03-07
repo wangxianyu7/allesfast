@@ -1244,10 +1244,10 @@ def rv_fct(params, inst, companion, xx=None, settings=None):
 ###############################################################################
 #::: calculate external priors (e.g. stellar density and eccentricity cutoff)
 ###############################################################################  
-def calculate_external_priors(params):
+def calculate_external_priors(params, debug=False):
     '''
     ! params must be updated via update_params() before calling this function !
-    
+
     bounds has to be list of len(theta), containing tuples of form
     ('none'), ('uniform', lower bound, upper bound), or ('normal', mean, std)
     '''
@@ -1277,6 +1277,7 @@ def calculate_external_priors(params):
             _tc = params.get(_comp + '_epoch')
             _P  = params.get(_comp + '_period')
             if _tc is None or _P is None or _P <= 0:
+                if debug: print(f'[DEBUG lnprob] -inf from TTV prior: {_comp} epoch={_tc}, period={_P}')
                 return -np.inf
             _N      = np.round((_T_obs - _tc) / _P)
             _T_pred = _tc + _N * _P
@@ -1357,6 +1358,7 @@ def calculate_external_priors(params):
         if np.isfinite(chi2):
             lnp += -0.5 * chi2
         else:
+            if debug: print(f'[DEBUG lnprob] -inf from MIST prior: chi2={chi2}')
             return -np.inf
 
     #::: teffsed / rstarsed / fehsed soft coupling (EXOFASTv2 style)
@@ -1402,6 +1404,7 @@ def calculate_external_priors(params):
         if np.isfinite(chi2):
             lnp += -0.5 * chi2
         else:
+            if debug: print(f'[DEBUG lnprob] -inf from SED prior: chi2={chi2}')
             return -np.inf
 
     if config.BASEMENT.settings.get('use_torres_prior', False):
@@ -1410,8 +1413,10 @@ def calculate_external_priors(params):
             if np.isfinite(out.chi2):
                 lnp += -0.5 * out.chi2
             else:
+                if debug: print(f'[DEBUG lnprob] -inf from Torres prior: chi2={out.chi2}')
                 return -np.inf
         except NotImplementedError:
+            if debug: print('[DEBUG lnprob] -inf from Torres prior: NotImplementedError')
             return -np.inf
     
     
@@ -1425,25 +1430,31 @@ def calculate_external_priors(params):
         '''
         #::: avoid runaway eccentricities
         if not (params[companion+'_ecc'] < 1.):
+            if debug: print(f'[DEBUG lnprob] -inf from ecc >= 1: {companion}_ecc={params[companion+"_ecc"]}')
             lnp = -np.inf
-        
+
         #::: avoid collisions
         if (params.get(companion+'_rsuma') is not None) \
             and not ((params[companion+'_ecc'] < (1. - params[companion+'_rsuma']))):
+            if debug: print(f'[DEBUG lnprob] -inf from collision check: {companion}_ecc={params[companion+"_ecc"]}, {companion}_rsuma={params[companion+"_rsuma"]}')
             lnp = -np.inf
-            
+
         # ::: avoid tidal circularizaion
         if (params[companion+'_radius_1'] is not None) \
             and (config.BASEMENT.settings['use_tidal_eccentricity_prior'] is True) \
-            and not (params[companion+'_ecc'] < (1. - 3*params[companion+'_radius_1'])): 
+            and not (params[companion+'_ecc'] < (1. - 3*params[companion+'_radius_1'])):
+            if debug: print(f'[DEBUG lnprob] -inf from tidal ecc check: {companion}_ecc={params[companion+"_ecc"]}, {companion}_radius_1={params[companion+"_radius_1"]}')
             lnp = -np.inf
             
             
     #::: constrain dilution to avoid ellc crashes
     for inst in config.BASEMENT.settings['inst_all']:
         if (params['dil_'+inst] > 0.999):
+            if debug: print(f'[DEBUG lnprob] -inf from dilution check: dil_{inst}={params["dil_"+inst]}')
             lnp = -np.inf
-            
+
+    if debug and not np.isfinite(lnp):
+        print(f'[DEBUG lnprob] external priors returned lnp={lnp}')
     return lnp
 
 
@@ -1536,21 +1547,22 @@ def calculate_external_priors(params):
 #==============================================================================
 #::: calculate all instruments linked (for stellar variability)
 #==============================================================================
-def calculate_lnlike_total(params):
-    
+def calculate_lnlike_total(params, debug=False):
+
     lnlike_total = 0
-    
-    #--------------------------------------------------------------------------  
+
+    #--------------------------------------------------------------------------
     #::: first, check and add external priors
-    #--------------------------------------------------------------------------  
-    lnprior_external = calculate_external_priors(params)   
-    lnlike_total += lnprior_external       
-    
-            
-    #--------------------------------------------------------------------------  
+    #--------------------------------------------------------------------------
+    lnprior_external = calculate_external_priors(params, debug=debug)
+    lnlike_total += lnprior_external
+
+
+    #--------------------------------------------------------------------------
     #::: directly catch any issues
-    #--------------------------------------------------------------------------  
+    #--------------------------------------------------------------------------
     if np.isnan(lnlike_total) or np.isinf(lnlike_total):
+        if debug: print(f'[DEBUG lnprob] -inf after external priors (lnprior={lnprior_external})')
         return -np.inf
     
     
@@ -1580,12 +1592,14 @@ def calculate_lnlike_total(params):
                 
                 #::: calculate the model; if there are any NaN, return -np.inf
                 model = calculate_model(params, inst, key)
-                if any(np.isnan(model)) or any(np.isinf(model)): 
+                if any(np.isnan(model)) or any(np.isinf(model)):
+                    if debug: print(f'[DEBUG lnprob] -inf from NaN/Inf in model: inst={inst}, key={key}')
                     return -np.inf
-                
+
                 #::: calculate errors, baseline and stellar variability
                 yerr_w = calculate_yerr_w(params, inst, key)
                 if np.any(yerr_w <= 0.):  # σ_total² ≤ 0 (invalid jittervar/variance)
+                    if debug: print(f'[DEBUG lnprob] -inf from yerr_w <= 0: inst={inst}, key={key}, min(yerr_w)={np.min(yerr_w)}')
                     return -np.inf
                 baseline = calculate_baseline(params, inst, key, model=model, yerr_w=yerr_w)
                 stellar_var = calculate_stellar_var(params, inst, key, model=model, baseline=baseline, yerr_w=yerr_w)
@@ -1593,6 +1607,7 @@ def calculate_lnlike_total(params):
                 #::: calculate residuals and inv_simga2
                 residuals = config.BASEMENT.data[inst][key] - model - baseline - stellar_var
                 if any(np.isnan(residuals)):
+                    if debug: print(f'[DEBUG lnprob] -inf from NaN in residuals: inst={inst}, key={key}')
                     return -np.inf
                 inv_sigma2_w = 1./yerr_w**2
                 
@@ -1614,9 +1629,11 @@ def calculate_lnlike_total(params):
                 
                 #::: calculate the model; if there are any NaN, return -np.inf
                 model = calculate_model(params, inst, key)
-                if any(np.isnan(model)) or any(np.isinf(model)): return -np.inf
-                
-                
+                if any(np.isnan(model)) or any(np.isinf(model)):
+                    if debug: print(f'[DEBUG lnprob] -inf from NaN/Inf in model (case 2): inst={inst}, key={key}')
+                    return -np.inf
+
+
                 #::: if that baseline is in FCTs
                 if ( config.BASEMENT.settings['baseline_'+key+'_'+inst] in FCTs ):
 #                    print('CASE 2a')
@@ -1650,7 +1667,8 @@ def calculate_lnlike_total(params):
                     try:
                         gp.compute(x, yerr=yerr_w)
                         lnlike_total += gp.log_likelihood(y)
-                    except:
+                    except Exception as _e:
+                        if debug: print(f'[DEBUG lnprob] -inf from GP baseline failure: inst={inst}, key={key}, error={_e}')
                         return -np.inf
                     
                     
@@ -1672,7 +1690,9 @@ def calculate_lnlike_total(params):
                 
                 #::: calculate the model. if there are any NaN, return -np.inf
                 model_i = calculate_model(params, inst, key)
-                if any(np.isnan(model_i)) or any(np.isinf(model_i)): return -np.inf
+                if any(np.isnan(model_i)) or any(np.isinf(model_i)):
+                    if debug: print(f'[DEBUG lnprob] -inf from NaN/Inf in model (case 3): inst={inst}, key={key}')
+                    return -np.inf
                                
                 #::: calculate the errors and baseline
                 yerr_w_i = calculate_yerr_w(params, inst, key)
@@ -1693,7 +1713,8 @@ def calculate_lnlike_total(params):
             try:
                 gp.compute(x, yerr=yerr)
                 lnlike_total += gp.log_likelihood(y)
-            except:
+            except Exception as _e:
+                if debug: print(f'[DEBUG lnprob] -inf from stellar var GP failure: key={key}, error={_e}')
                 return -np.inf
             
             
@@ -1714,9 +1735,10 @@ def calculate_lnlike_total(params):
     #::: again, catch any issues
     #--------------------------------------------------------------------------  
     if np.isnan(lnlike_total) or np.isinf(lnlike_total):
+        if debug: print(f'[DEBUG lnprob] -inf at final check: lnlike_total={lnlike_total}')
         return -np.inf
-        
-        
+
+
     return lnlike_total
 
 

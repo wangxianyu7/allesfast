@@ -112,6 +112,17 @@ def ns_fit(datadir):
     tol    = config.BASEMENT.settings['ns_tol']      # (defualt 0.01) the stopping criterion
         
      
+    #::: diagnose if initial point gives -inf
+    _test_lnlike = ns_lnlike(config.BASEMENT.theta_0)
+    if not np.isfinite(_test_lnlike):
+        logprint('\n[DEBUG] Initial theta_0 has lnlike = -inf. Running diagnostics...')
+        _test_params = update_params(config.BASEMENT.theta_0)
+        calculate_lnlike_total(_test_params, debug=True)
+        logprint('[DEBUG] Parameter values for theta_0:')
+        for _k, _v in zip(config.BASEMENT.fitkeys, config.BASEMENT.theta_0):
+            logprint(f'  {_k} = {_v}')
+        logprint('')
+
     #::: run
     if config.BASEMENT.settings['ns_modus']=='static':
         logprint('\nRunning Static Nested Sampler...')
