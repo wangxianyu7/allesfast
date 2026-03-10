@@ -793,9 +793,52 @@ def derive(samples, mode):
 
 
         #=====================================================================
+        #::: plot 1-D derived posteriors
+        #=====================================================================
+        from scipy.stats import gaussian_kde
+
+        n_panels = len(names)
+        ncols = 2
+        nrows = int(np.ceil(n_panels / ncols))
+        fig_post, axes_post = plt.subplots(nrows, ncols, figsize=(12, 3.5 * nrows))
+        axf = axes_post.flatten()
+
+        for i, name in enumerate(names):
+            ax = axf[i]
+            vals = derived_samples[name][idx]
+            vals = vals[np.isfinite(vals)]
+            if len(vals) < 10 or np.std(vals) == 0:
+                ax.set(title=name, ylabel='Probability', yticks=[])
+                continue
+            xmin, xmax = np.percentile(vals, [0.5, 99.5])
+            xgrid = np.linspace(xmin, xmax, 200)
+            try:
+                kde = gaussian_kde(vals)
+                ax.fill_between(xgrid, kde(xgrid), alpha=0.3, color='#1f77b4')
+                ax.plot(xgrid, kde(xgrid), color='#1f77b4', lw=2.0)
+            except Exception:
+                ax.hist(vals, bins=50, density=True, color='#1f77b4', alpha=0.5)
+            lo, med, hi = np.nanpercentile(vals, [15.865, 50., 84.135])
+            ax.axvline(med, color='red', ls='-', lw=1.5)
+            ax.axvline(lo, color='red', ls='--', lw=1.0)
+            ax.axvline(hi, color='red', ls='--', lw=1.0)
+            value = round_tex(med, med - lo, hi - med)
+            ax.set(title=name + r'  $= ' + value + '$', ylabel='Probability', yticks=[])
+
+        for j in range(n_panels, len(axf)):
+            axf[j].set_visible(False)
+
+        plt.tight_layout()
+        post_path = os.path.join(config.BASEMENT.outdir, mode+'_derived_posteriors.pdf')
+        fig_post.savefig(post_path, bbox_inches='tight')
+        plt.close(fig_post)
+
+
+        #=====================================================================
         #::: finish
         #=====================================================================
         logprint('\nSaved '+corner_path)
+        logprint('Saved '+post_path)
         
         
     else:

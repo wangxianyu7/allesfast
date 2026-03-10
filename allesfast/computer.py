@@ -1142,7 +1142,7 @@ def rv_fct(params, inst, companion, xx=None, settings=None):
         tc1     = params[companion+'_epoch']
         secosw1 = params[companion+'_f_c']
         sesinw1 = params[companion+'_f_s']
-        e = np.sqrt(secosw1**2 + sesinw1**2)
+        e = secosw1**2 + sesinw1**2
         w = np.arctan2(sesinw1, secosw1)   # radians; arctan2 handles e==0 cleanly
 
         # calculate the duration of the transit

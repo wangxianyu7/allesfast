@@ -47,6 +47,59 @@ sns.set_context(rc={'lines.markeredgewidth': 1})
     
     
 ###############################################################################
+#::: sanitize LaTeX labels to avoid matplotlib mathtext parse errors
+###############################################################################
+import re as _re
+
+def _sanitize_latex_label(label):
+    """Fix common LaTeX issues in parameter labels that crash matplotlib.
+
+    Handles double subscripts like $T_eff_star$ → $T_{eff\_star}$ by wrapping
+    everything after the first _ inside a single {} group within each $...$ block.
+    """
+    label = str(label)
+
+    def _fix_math(m):
+        """Fix a single $...$ math block."""
+        inner = m.group(1)
+        # Count bare underscores (not already inside braces)
+        # Simple heuristic: if there are >=2 underscores at the top level, fix it
+        depth = 0
+        n_underscores = 0
+        for ch in inner:
+            if ch == '{':
+                depth += 1
+            elif ch == '}':
+                depth -= 1
+            elif ch == '_' and depth == 0:
+                n_underscores += 1
+        if n_underscores < 2:
+            return m.group(0)  # no problem
+        # Wrap: put everything after first bare _ into one {...} group
+        depth = 0
+        result = []
+        first_found = False
+        for ch in inner:
+            if ch == '{':
+                depth += 1
+                result.append(ch)
+            elif ch == '}':
+                depth -= 1
+                result.append(ch)
+            elif ch == '_' and depth == 0 and not first_found:
+                first_found = True
+                result.append('_{')
+            else:
+                result.append(ch)
+        if first_found:
+            result.append('}')
+        return '$' + ''.join(result) + '$'
+
+    # Apply to each $...$ block (non-greedy)
+    return _re.sub(r'\$([^$]+)\$', _fix_math, label)
+
+
+###############################################################################
 #::: 'Basement' class, which contains all the data, settings, etc.
 ###############################################################################
 class Basement():
@@ -88,7 +141,7 @@ class Basement():
         print('')
         self.logprint('\nallesfast version')
         self.logprint('---------------------')
-        self.logprint('v1.2.9')
+        self.logprint('v0.0.1')
         
         self.load_settings()
         self.load_params()
@@ -290,10 +343,27 @@ class Basement():
         # from pprint import pprint
         # pprint(self.settings)
 
+        def _available_cores():
+            """Return the number of usable CPU cores, respecting SLURM allocation."""
+            # SLURM sets SLURM_CPUS_PER_TASK or SLURM_NPROCS when allocated
+            for env_var in ('SLURM_CPUS_PER_TASK', 'SLURM_NPROCS', 'SLURM_JOB_CPUS_PER_NODE'):
+                val = os.environ.get(env_var)
+                if val is not None:
+                    try:
+                        return int(val)
+                    except ValueError:
+                        pass
+            # len(os.sched_getaffinity(0)) respects cgroup/taskset limits (Linux)
+            try:
+                return len(os.sched_getaffinity(0))
+            except AttributeError:
+                pass
+            return cpu_count()
+
         if 'multiprocess_cores' not in self.settings.keys():
-            self.settings['multiprocess_cores'] = cpu_count()-1
+            self.settings['multiprocess_cores'] = max(_available_cores() - 1, 1)
         elif self.settings['multiprocess_cores'] == 'all':
-            self.settings['multiprocess_cores'] = cpu_count()-1
+            self.settings['multiprocess_cores'] = max(_available_cores() - 1, 1)
         else:
             self.settings['multiprocess_cores'] = int(self.settings['multiprocess_cores'])
             if self.settings['multiprocess_cores'] == cpu_count():
@@ -746,6 +816,7 @@ class Basement():
         #==========================================================================          
         self.allkeys = np.atleast_1d(buf['name']) #len(all rows in params.csv)
         self.labels = np.atleast_1d(buf['label']) #len(all rows in params.csv)
+        self.labels = np.array([_sanitize_latex_label(l) for l in self.labels])
         self.units = np.atleast_1d(buf['unit']) #len(all rows in params.csv)
         if 'truth' in buf.dtype.names:
             self.truths = np.atleast_1d(buf['truth']) #len(all rows in params.csv)

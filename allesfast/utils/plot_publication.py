@@ -387,7 +387,7 @@ def _compute_t14(params, companion='b'):
         a_Rsun = a_m / _R_sun                                   # R_sun
         rsuma  = rstar * (1.0 + rr) / a_Rsun
 
-    e = np.sqrt(f_c**2 + f_s**2)
+    e = f_c**2 + f_s**2
     w = np.arctan2(f_s, f_c)
     sini = np.sqrt(1.0 - cosi**2)
     R_star_over_a = rsuma / (1.0 + rr)
@@ -621,7 +621,7 @@ def _compute_keplerian(time, params, companion='b'):
     f_s = params.get(f'{companion}_f_s', 0.0)
     K   = params.get(f'{companion}_K', 0.0)
 
-    e = np.sqrt(f_c**2 + f_s**2)
+    e = f_c**2 + f_s**2
     w = np.arctan2(f_s, f_c)
     tp = timetrans_to_timeperi(tc, per, e, w)
     return rv_drive(time, np.array([per, tp, e, w, K * 1e3])) / 1e3  # km/s

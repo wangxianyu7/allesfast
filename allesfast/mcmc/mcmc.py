@@ -334,13 +334,17 @@ def run_de_optimization(s):
         logprint(f"  Loading: {pop_file}")
         df  = pd.read_csv(pop_file)
         pop = df[config.BASEMENT.fitkeys].values
-        _best_df = pd.read_csv(best_file)
-        # strip leading '#' from header (params.csv format has '#name,...')
-        _best_df.columns = [c.lstrip('#').strip() for c in _best_df.columns]
-        # support both old format (parameter,value) and new params.csv format (name,value,...)
-        _name_col = 'parameter' if 'parameter' in _best_df.columns else 'name'
-        best_row = _best_df.set_index(_name_col)['value']
-        best = best_row[config.BASEMENT.fitkeys].values
+        # optimized_best.csv is saved in params.csv format (name,value,...)
+        best_map = {}
+        with open(best_file, 'r') as fh:
+            for line in fh:
+                stripped = line.strip()
+                if stripped == '' or stripped.startswith('#'):
+                    continue
+                parts = stripped.split(',', 2)
+                if len(parts) >= 2:
+                    best_map[parts[0]] = float(parts[1])
+        best = np.array([best_map[k] for k in config.BASEMENT.fitkeys])
         return best, pop
 
     ndim = config.BASEMENT.ndim
@@ -781,11 +785,19 @@ def run_amoeba_optimization(s, p0=None):
 
     # --- resume: skip if results already exist ---
     if os.path.exists(best_file):
-        import pandas as pd
         logprint("\nFound existing Amoeba results – skipping Amoeba optimisation.")
         logprint(f"  Loading: {best_file}")
-        row  = pd.read_csv(best_file).set_index('parameter')['value']
-        best = row[config.BASEMENT.fitkeys].values
+        # amoeba_best.csv is saved in params.csv format (name,value,...)
+        best_map = {}
+        with open(best_file, 'r') as fh:
+            for line in fh:
+                stripped = line.strip()
+                if stripped == '' or stripped.startswith('#'):
+                    continue
+                parts = stripped.split(',', 2)
+                if len(parts) >= 2:
+                    best_map[parts[0]] = float(parts[1])
+        best = np.array([best_map[k] for k in config.BASEMENT.fitkeys])
         return best
 
     theta_0 = np.asarray(p0) if p0 is not None else config.BASEMENT.theta_0.copy()
@@ -922,20 +934,62 @@ def _run_emcee(s, p0_de=None, p0_best=None):
                       * np.random.randn(nwalkers, config.BASEMENT.ndim))
             already_completed_steps = 0
 
-        for i, b in enumerate(config.BASEMENT.bounds):
-            if b[0] == 'uniform':
-                p0[:, i] = np.clip(p0[:, i], b[1], b[2])
+        # --- EXOFASTv2-style walker initialization ---
+        # (see exofast_demcpt_multi.pro lines 336-362)
+        ndim = config.BASEMENT.ndim
+        nwalkers = p0.shape[0]
+        centre = p0_best if p0_best is not None else config.BASEMENT.theta_0
+        factor = min(np.sqrt(500.0 / ndim), 3.0)
 
-        #::: diagnose if initial walkers all give -inf
-        _test_lnlike = mcmc_lnlike(p0[0])
-        if not np.isfinite(_test_lnlike):
-            logprint('\n[DEBUG] Initial walker 0 has lnprob = -inf. Running diagnostics...')
-            _test_params = update_params(p0[0])
-            calculate_lnlike_total(_test_params, debug=True)
-            logprint('[DEBUG] Parameter values for walker 0:')
-            for _k, _v in zip(config.BASEMENT.fitkeys, p0[0]):
-                logprint(f'  {_k} = {_v}')
-            logprint('')
+        if p0_de is not None and not continue_old_run:
+            # DE population: walkers are already good, just verify finite
+            n_bad = 0
+            for j in range(nwalkers):
+                lnp = mcmc_lnprob(p0[j])
+                if not np.isfinite(lnp):
+                    # Replace bad DE walker with decaying scatter around centre
+                    n_bad += 1
+                    niter = 0
+                    while True:
+                        trial = (centre
+                                 + factor / np.exp(niter / 1000.0)
+                                 * _init_scale * np.random.randn(ndim))
+                        for i, b in enumerate(config.BASEMENT.bounds):
+                            if b[0] == 'uniform':
+                                trial[i] = np.clip(trial[i], b[1], b[2])
+                        if np.isfinite(mcmc_lnprob(trial)):
+                            p0[j] = trial
+                            break
+                        niter += 1
+                        if niter > 10000:
+                            logprint(f'[WARNING] Walker {j}: could not find finite lnprob')
+                            break
+            logprint(f'  DE walkers: {nwalkers - n_bad}/{nwalkers} finite, replaced {n_bad}')
+
+        elif not continue_old_run:
+            # No DE population: EXOFASTv2-style init from centre with decaying scatter
+            logprint(f'  Initialising {nwalkers} walkers (EXOFASTv2 style, factor={factor:.2f}) ...')
+            for j in range(nwalkers):
+                niter = 0
+                while True:
+                    if j == 0 and niter == 0:
+                        trial = centre.copy()  # first walker at best-fit
+                    else:
+                        trial = (centre
+                                 + factor / np.exp(niter / 1000.0)
+                                 * _init_scale * np.random.randn(ndim))
+                    for i, b in enumerate(config.BASEMENT.bounds):
+                        if b[0] == 'uniform':
+                            trial[i] = np.clip(trial[i], b[1], b[2])
+                    if np.isfinite(mcmc_lnprob(trial)):
+                        p0[j] = trial
+                        break
+                    niter += 1
+                    if niter > 10000:
+                        logprint(f'[WARNING] Walker {j}: could not find finite lnprob after 10000 tries')
+                        p0[j] = trial
+                        break
+            logprint(f'  Walker initialisation done.')
 
         if not continue_old_run:
             for i in range(s['mcmc_pre_run_loops']):
@@ -960,11 +1014,19 @@ def _run_emcee(s, p0_de=None, p0_best=None):
         min_steps_before_check = max(check_every, 200)  # don't check too early
 
         # Unified chunked loop: checks deadline + autocorrelation convergence
-        chunk = min(check_every, 100)
+        chunk = 1
         done = 0
         pos = p0
         converged = False
         steps_since_check = 0
+
+        show_progress = s.get('print_progress', True)
+        bar = None
+        if show_progress:
+            from tqdm import tqdm
+            bar = tqdm(total=remaining_steps, desc='emcee', unit=' steps',
+                       dynamic_ncols=True)
+
         while done < remaining_steps:
             if deadline is not None and timer() >= deadline:
                 logprint(f"\n  emcee stopped early at {done}/{remaining_steps} thinned steps: time limit reached.")
@@ -976,17 +1038,23 @@ def _run_emcee(s, p0_de=None, p0_best=None):
             done += n
             steps_since_check += n
 
-            if s['print_progress']:
-                pct = 100.0 * done / remaining_steps
-                print(f"\r  emcee {pct:.1f}% ({done}/{remaining_steps} steps)   ",
-                      end="", flush=True)
+            if bar is not None:
+                bar.update(n)
 
             # Convergence check via autocorrelation time
             if steps_since_check >= check_every and done >= min_steps_before_check:
                 steps_since_check = 0
                 try:
-                    tau = sampler.get_autocorr_time(tol=0)
-                    chain_lengths = done / tau
+                    # Total thinned steps in backend (old + new)
+                    total_thinned = sampler.get_chain().shape[0]
+                    # Discard first half to exclude burn-in when estimating tau
+                    discard = total_thinned // 2
+                    tau = sampler.get_autocorr_time(tol=0, discard=discard)
+                    post_burn_steps = total_thinned - discard
+                    chain_lengths = post_burn_steps / tau
+                    min_Ntau = np.min(chain_lengths) if np.all(np.isfinite(chain_lengths)) else 0.0
+                    if bar is not None:
+                        bar.set_postfix_str(f'worst {min_Ntau:.1f}x tau (need {tau_factor:.0f}x)')
                     if np.all(chain_lengths > tau_factor) and np.all(np.isfinite(tau)):
                         logprint(f"\n  emcee converged at {done}/{remaining_steps} thinned steps: "
                                  f"all chains > {tau_factor:.0f}x tau "
@@ -996,8 +1064,8 @@ def _run_emcee(s, p0_de=None, p0_best=None):
                 except emcee.autocorr.AutocorrError:
                     pass  # not enough samples yet
 
-        if s['print_progress']:
-            print()
+        if bar is not None:
+            bar.close()
         if not converged and done >= remaining_steps:
             logprint(f"  emcee completed {done} thinned steps (max reached).")
         return sampler
