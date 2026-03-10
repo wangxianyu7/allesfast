@@ -1271,13 +1271,13 @@ def calculate_external_priors(params, debug=False):
             _mu, _sigma = config.BASEMENT.vsini_prior
             lnp += -0.5 * ((_vsini - _mu) / _sigma)**2 - np.log(_sigma * np.sqrt(2*np.pi))
 
-    #::: TTV linear-ephemeris prior
-    if config.BASEMENT.settings.get('use_ttv_prior', False):
-        for _comp, (_T_obs, _sigma) in config.BASEMENT.ttv_data.items():
+    #::: midtimes linear-ephemeris prior
+    if config.BASEMENT.settings.get('midtimes_file') is not None:
+        for _comp, (_T_obs, _sigma) in config.BASEMENT.midtimes_data.items():
             _tc = params.get(_comp + '_epoch')
             _P  = params.get(_comp + '_period')
             if _tc is None or _P is None or _P <= 0:
-                if debug: print(f'[DEBUG lnprob] -inf from TTV prior: {_comp} epoch={_tc}, period={_P}')
+                if debug: print(f'[DEBUG lnprob] -inf from midtimes prior: {_comp} epoch={_tc}, period={_P}')
                 return -np.inf
             _N      = np.round((_T_obs - _tc) / _P)
             _T_pred = _tc + _N * _P
@@ -1302,7 +1302,7 @@ def calculate_external_priors(params, debug=False):
         rstar=params.get('A_rstar', None),
         teffsed=params.get('A_teffsed', None),   # SED-specific Teff (EXOFASTv2 style)
         rstarsed=params.get('A_rstarsed', None), # SED-specific Rstar (EXOFASTv2 style)
-        fehsed=params.get('A_fehsed', None),     # SED-specific [Fe/H] (EXOFASTv2 style)
+
         mstar=params.get('A_mstar', None),
         eep=params.get('A_eep', None),     # primary MIST parameter (replaces age)
         age=params.get('A_age', None),     # legacy / non-MIST use only
@@ -1334,7 +1334,7 @@ def calculate_external_priors(params, debug=False):
             rstar=params.get(f'{_letter}_rstar', None),
             teffsed=params.get(f'{_letter}_teffsed', None),
             rstarsed=params.get(f'{_letter}_rstarsed', None),
-            fehsed=params.get(f'{_letter}_fehsed', None),
+
             mstar=params.get(f'{_letter}_mstar', None),
             eep=params.get(f'{_letter}_eep', None),
             age=params.get(f'{_letter}_age', None),
@@ -1361,25 +1361,28 @@ def calculate_external_priors(params, debug=False):
             if debug: print(f'[DEBUG lnprob] -inf from MIST prior: chi2={chi2}')
             return -np.inf
 
-    #::: teffsed / rstarsed / fehsed soft coupling (EXOFASTv2 style)
+    #::: teffsed / rstarsed soft coupling (EXOFASTv2 style)
     # Penalise SED-specific params departing from their spectroscopic counterparts.
-    # teffsedfloor (default 0.02 = 2%) used for Teff and Rstar; fehsedfloor (default
-    # 0.0 = no coupling) for [Fe/H], matching EXOFASTv2 defaults.
+    # teffsedfloor (default 0.02 = 2%) for Teff; fbolsedfloor (default 0.024 = 2.4%)
+    # for luminosity coupling of Rstar.  All defaults match EXOFASTv2.
+    # NOTE: fehsed has been permanently disabled; SED uses feh directly.
     _teffsedfloor = float(config.BASEMENT.settings.get('teffsedfloor', 0.02))
-    _fehsedfloor  = float(config.BASEMENT.settings.get('fehsedfloor',  0.0))
+    _fbolsedfloor = float(config.BASEMENT.settings.get('fbolsedfloor', 0.024))
     for _s, _ltr in zip(stars, 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'):
         _teffsed  = params.get(f'{_ltr}_teffsed',  None)
         _teff     = params.get(f'{_ltr}_teff',     None)
         _rstarsed = params.get(f'{_ltr}_rstarsed', None)
         _rstar    = params.get(f'{_ltr}_rstar',    None)
-        _fehsed   = params.get(f'{_ltr}_fehsed',   None)
-        _feh      = params.get(f'{_ltr}_feh',      None)
-        if _teffsed is not None and _teff is not None:
+        # Teff penalty: fractional floor (EXOFASTv2 exofast_chi2v2.pro line 888)
+        if _teffsed is not None and _teff is not None and _teffsedfloor > 0:
             lnp -= 0.5 * ((_teff - _teffsed) / (_teffsedfloor * _teffsed)) ** 2
-        if _rstarsed is not None and _rstar is not None:
-            lnp -= 0.5 * ((_rstar - _rstarsed) / (_teffsedfloor * _rstarsed)) ** 2
-        if _fehsed is not None and _feh is not None and _fehsedfloor > 0:
-            lnp -= 0.5 * ((_feh - _fehsed) / _fehsedfloor) ** 2
+        # Luminosity penalty: L ∝ R²T⁴, fractional floor (EXOFASTv2 line 906)
+        if _rstarsed is not None and _rstar is not None and _fbolsedfloor > 0:
+            _teffsed_val = _teffsed if _teffsed is not None else _teff
+            if _teffsed_val is not None:
+                _Lstar_sed = _rstarsed**2 * _teffsed_val**4  # in solar-like units
+                _Lstar     = _rstar**2    * _teff**4
+                lnp -= 0.5 * ((_Lstar_sed - _Lstar) / (_fbolsedfloor * _Lstar_sed)) ** 2
 
     if config.BASEMENT.settings.get('use_sed_prior', False):
         sed_file = config.BASEMENT.settings.get('sed_file', None)

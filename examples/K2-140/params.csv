@@ -41,17 +41,16 @@ jittervar_rv_HARPS,1.919508e-04,1,uniform -1 1,jvar_HARPS,km2/s2
 jittervar_rv_HIRES,4.261426e-05,1,uniform -1 1,jvar_HIRES,km2/s2
 #stellar parameters
 #SED error scale (free, like EXOFASTv2; bounds 0.01-100)
-A_sed_errscale,0.5355477447,1,uniform 0.01 100,errscale_SED,
-A_rstar,1.095663874,1,normal 1.09566 0.05,R_star,Rsun
-A_rstarsed,1.095663874,1,uniform 0.1 20.0,Rstar_SED,Rsun
+A_sed_errscale,1,1,uniform 0.01 100,errscale_SED,
+A_rstar,1.095663874,1,uniform 0.1 10,R_star,Rsun
+A_rstarsed,0.993494487,1,uniform 0.1 20.0,Rstar_SED,Rsun
 #logmstar (EXOFASTv2 style): fit log10(Mstar); A_mstar derived automatically
-A_logmstar,-0.01369,1,uniform -1.0 1.0,log_Mstar,dex
+A_logmstar,-0.013891878,1,uniform -1.0 1.0,log_Mstar,dex
 A_teff,5585.0,1,normal 5585.0 134.04,Teff,K
-A_teffsed,5585.0,1,uniform 3500 10000,Teff_SED,K
+A_teffsed,5662.292129,1,uniform 3500 10000,Teff_SED,K
 A_feh,0.500,1,normal 0.500 0.080,feh,dex
-#fehsed: SED-specific metallicity; decoupled from feh (fehsedfloor=0 by default)
-A_fehsed,0.500,1,uniform -1.0 1.0,feh_SED,dex
-A_eep,412.098,1,uniform 200.0 500.0,EEP,
-A_av,0.072717838,1,uniform 0.0 1.0,Av,mag
+A_initfeh,0.478,1,uniform -5.0 0.5,feh_init,dex
+A_eep,412.098,1,uniform 1.0 808.0,EEP,
+A_av,0.072717838,1,trunc_normal 0.0 1.0 0.072717838 0.032965418,Av,mag
 A_parallax,2.90062,1,normal 2.90062 0.01887,parallax,mas
-A_age,10.47,1,uniform 0.1 14.0,age,Gyr
+A_age,10.4661001,1,uniform 0.0 13.82,age,Gyr

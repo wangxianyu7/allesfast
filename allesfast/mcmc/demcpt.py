@@ -11,7 +11,7 @@ Features
   - Parallel Tempering (optional, ntemps > 1)
   - Multiprocessing for parallel log-posterior evaluation
   - HDF5 checkpoint save/load
-  - Automatic burn-in via _find_burnin (median chi² crossing)
+  - Automatic burn-in via _getburnndx (EXOFASTv2 getburnndx algorithm)
   - Gelman-Rubin + independent-draws (Tz) convergence
   - emcee-compatible API: get_chain(), get_log_prob(), acceptance_fraction
 
@@ -115,77 +115,139 @@ def _gelman_rubin(chains):
 
 
 @njit(cache=True)
-def _find_burnin(neg2logp):
+def _njit_median(arr):
+    """Median of a 1-D array (numba-compatible)."""
+    s = arr.copy()
+    s.sort()
+    n = len(s)
+    if n % 2 == 0:
+        return (s[n // 2 - 1] + s[n // 2]) / 2.0
+    return float(s[n // 2])
+
+
+@njit(cache=True)
+def _getburnndx(neg2logp):
     """
-    Burn-in index: the latest step at which any chain first crosses
-    below the median -2*logpost.
+    EXOFASTv2-style burn-in detection and good-chain identification.
+
+    Algorithm (mirrors ``getburnndx.pro``):
+      1. Find the best chain (lowest chi² anywhere) and its minimum index.
+      2. Clamp the preliminary burn-in to [10%, 75%] of nsteps.
+      3. Compute ``medchi2`` = min over chains of (median chi² from burnndx
+         to end).  This is the threshold: a chain is "burned in" once it
+         has at least one point below this value.
+      4. For each chain, record the first step where chi² < medchi2,
+         clamped to [10%, 90%] of nsteps.  Chains that never cross get
+         burnndx = nsteps-1.
+      5. Sort the per-chain burn-in indices and pick the cutoff that
+         **maximises the total number of usable links** (= post-burn-in
+         steps × number of good chains).
+      6. If fewer than 3 chains are good, fall back to using all chains.
 
     Parameters
     ----------
     neg2logp : ndarray (nsteps, nchains)
+        ``-2 * log_posterior``, i.e. chi²-like values (lower = better).
 
     Returns
     -------
-    burnin : int
+    burnndx : int
+        First usable step index (discard steps 0 .. burnndx-1).
+    good : int64 array
+        Indices of good chains.
     """
     nsteps, nchains = neg2logp.shape
+    lo = int(round(0.1 * nsteps))   # minimum burn-in (10 %)
+    hi = int(round(0.9 * nsteps))   # maximum burn-in (90 %)
 
-    flat = neg2logp.ravel().copy()
-    flat.sort()
-    n = len(flat)
-    median_val = (flat[n // 2 - 1] + flat[n // 2]) / 2.0 if n % 2 == 0 else flat[n // 2]
-
-    burn = 0
+    # --- Step 1: find the best chain and its global-minimum index ----------
+    best_chi2 = np.inf
+    best_chain = 0
+    best_ndx = 0
     for c in range(nchains):
         for t in range(nsteps):
-            if neg2logp[t, c] <= median_val:
-                if t > burn:
-                    burn = t
+            if neg2logp[t, c] < best_chi2:
+                best_chi2 = neg2logp[t, c]
+                best_chain = c
+                best_ndx = t
+
+    # --- Step 2: preliminary burnndx clamped to [10 %, 75 %] --------------
+    prelim = best_ndx
+    if prelim < lo:
+        prelim = lo
+    hi75 = int(round(0.75 * nsteps))
+    if prelim > hi75:
+        prelim = hi75
+
+    # --- Step 3: medchi2 = min-of-chain-medians from prelim to end ---------
+    medchi2 = np.inf
+    for c in range(nchains):
+        seg = neg2logp[prelim:nsteps, c].copy()
+        seg.sort()
+        n = len(seg)
+        if n == 0:
+            continue
+        med = (seg[n // 2 - 1] + seg[n // 2]) / 2.0 if n % 2 == 0 else float(seg[n // 2])
+        if med < medchi2:
+            medchi2 = med
+
+    # --- Step 4: per-chain first-crossing, clamped to [10 %, 90 %] --------
+    burnndxs = np.empty(nchains, dtype=np.int64)
+    for c in range(nchains):
+        found = -1
+        for t in range(nsteps):
+            if neg2logp[t, c] < medchi2:
+                found = t
                 break
-    return burn
+        if found == -1:
+            burnndxs[c] = nsteps - 1
+        else:
+            clamped = found
+            if clamped < lo:
+                clamped = lo
+            if clamped > hi:
+                clamped = hi
+            burnndxs[c] = clamped
+
+    # --- Step 5: maximise total usable links --------------------------------
+    sorted_idx = np.argsort(burnndxs)
+    best_nlinks = 0
+    best_cut = 0
+    for j in range(nchains):
+        nlinks = (nsteps - burnndxs[sorted_idx[j]]) * (j + 1)
+        if nlinks > best_nlinks:
+            best_nlinks = nlinks
+            best_cut = j
+
+    burnndx = burnndxs[sorted_idx[best_cut]]
+    # Final clamp: never use less than the last 10 %
+    if burnndx > hi:
+        burnndx = hi
+
+    good_sorted = sorted_idx[:best_cut + 1]
+
+    # --- Step 6: fallback if < 3 good chains --------------------------------
+    if len(good_sorted) < 3:
+        good_sorted = np.arange(nchains, dtype=np.int64)
+
+    # Return sorted good-chain indices
+    good = good_sorted.copy()
+    good.sort()
+    return burnndx, good
+
+
+@njit(cache=True)
+def _find_burnin(neg2logp):
+    """Convenience wrapper: return only the burn-in index."""
+    burnndx, _good = _getburnndx(neg2logp)
+    return burnndx
 
 
 @njit(cache=True)
 def _identify_good_chains(neg2logp):
-    """
-    Discard chains stuck in local minima.
-    A chain is "bad" if its median -2*logpost exceeds
-    (overall median of chain medians) + 5 * 1.4826 * MAD.
-
-    Parameters
-    ----------
-    neg2logp : ndarray (nsteps, nchains)
-
-    Returns
-    -------
-    good : int64 array of good chain indices
-    """
-    nsteps, nchains = neg2logp.shape
-
-    medians = np.empty(nchains)
-    for c in range(nchains):
-        col = neg2logp[:, c].copy()
-        col.sort()
-        n = len(col)
-        medians[c] = (col[n // 2 - 1] + col[n // 2]) / 2.0 if n % 2 == 0 else col[n // 2]
-
-    sm = medians.copy()
-    sm.sort()
-    n = len(sm)
-    overall = (sm[n // 2 - 1] + sm[n // 2]) / 2.0 if n % 2 == 0 else sm[n // 2]
-
-    devs = np.abs(medians - overall)
-    ds = devs.copy()
-    ds.sort()
-    mad = (ds[n // 2 - 1] + ds[n // 2]) / 2.0 if n % 2 == 0 else ds[n // 2]
-
-    threshold = overall + 5.0 * 1.4826 * mad
-
-    good = []
-    for c in range(nchains):
-        if medians[c] <= threshold:
-            good.append(c)
-    return np.array(good, dtype=np.int64)
+    """Convenience wrapper: return only the good-chain indices."""
+    _burnndx, good = _getburnndx(neg2logp)
+    return good
 
 
 # ---------------------------------------------------------------------------
@@ -278,8 +340,8 @@ class DEMCPTSampler:
 
     # ----- main loop ---------------------------------------------------------
 
-    def run(self, p0, nsteps, nthin=1, scale=None, progress=True,
-            check_every=None, npass_required=6, nworkers=1,
+    def run(self, p0, nsteps, nthin=1, scale=None, population=None,
+            progress=True, check_every=None, npass_required=6, nworkers=1,
             save_every=0, save_file=None, deadline=None):
         """
         Run the sampler.
@@ -294,6 +356,12 @@ class DEMCPTSampler:
             Keep every nthin-th sample (default 1).
         scale : ndarray (ndim,) or None
             Per-parameter step scale.  If None, uses 1% of |p0|.
+        population : ndarray (npop, ndim) or None
+            DE population to seed walkers from.  Cold-chain walkers are
+            initialised at population positions (first min(npop, nchains)
+            members); extra walkers and all hot chains are perturbed from
+            a random population member.  If npop > nchains the population
+            is sorted by lnprob and the best nchains are used.
         progress : bool
         check_every : int or None
             Steps between convergence checks.  Default nsteps//20.
@@ -330,20 +398,48 @@ class DEMCPTSampler:
 
         use_pool = nworkers > 1
 
+        # ---- prepare population for seeding ----------------------------------
+        have_pop = population is not None and len(population) > 0
+        if have_pop:
+            population = np.asarray(population, dtype=np.float64)
+            npop = len(population)
+            # If population is larger than nchains, keep the best members
+            if npop > nchains:
+                pop_lps = np.array([logpost(p) for p in population])
+                best_idx = np.argsort(pop_lps)[::-1][:nchains]
+                population = population[best_idx]
+                npop = nchains
+        else:
+            npop = 0
+
         # ---- initialise walkers (nchains, ntemps, ndim) ---------------------
         pos = np.empty((nchains, ntemps, ndim))
         logp = np.full((nchains, ntemps), -np.inf)
 
         if progress:
-            print(f"Initialising {nchains} chains x {ntemps} temps ...")
+            if have_pop:
+                print(f"Initialising {nchains} chains x {ntemps} temps "
+                      f"(seeding from DE population of {npop}) ...")
+            else:
+                print(f"Initialising {nchains} chains x {ntemps} temps ...")
 
         for j in range(nchains):
             for m in range(ntemps):
                 niter = 0
                 while True:
-                    if j == 0 and niter == 0:
+                    if have_pop and m == 0 and j < npop and niter == 0:
+                        # Cold chain with population member → use directly
+                        trial = population[j].copy()
+                    elif have_pop and niter == 0:
+                        # Hot chain or extra cold walker → perturb random member
+                        src = population[rng.integers(npop)]
+                        factor = min(np.sqrt(500.0 / ndim), 3.0)
+                        trial = src + factor * scale * rng.standard_normal(ndim)
+                    elif j == 0 and m == 0 and niter == 0:
+                        # No population: first cold walker at p0
                         trial = p0.copy()
                     else:
+                        # No population: perturb from p0 (EXOFASTv2 style)
                         factor = min(np.sqrt(500.0 / ndim), 3.0)
                         trial = p0 + (factor / np.exp(niter / 1000.0)
                                       * scale * rng.standard_normal(ndim))
@@ -731,8 +827,7 @@ class DEMCPTSampler:
         if self._chain is None:
             return None
         chi2 = -2.0 * self._log_prob
-        burnndx = _find_burnin(chi2)
-        good = _identify_good_chains(chi2[burnndx:])
+        burnndx, good = _getburnndx(chi2)
         return self._chain[burnndx:, good].reshape(-1, self.ndim)
 
     @property
@@ -741,8 +836,7 @@ class DEMCPTSampler:
         if self._log_prob is None:
             return None
         chi2 = -2.0 * self._log_prob
-        burnndx = _find_burnin(chi2)
-        good = _identify_good_chains(chi2[burnndx:])
+        burnndx, good = _getburnndx(chi2)
         return self._log_prob[burnndx:, good].ravel()
 
     # ----- diagnostics -------------------------------------------------------
@@ -754,8 +848,7 @@ class DEMCPTSampler:
             return None
 
         chi2 = -2.0 * self._log_prob
-        burnndx = _find_burnin(chi2)
-        good = _identify_good_chains(chi2[burnndx:])
+        burnndx, good = _getburnndx(chi2)
         n_bad = self.nchains - len(good)
 
         post_burn = self._chain[burnndx:, good]

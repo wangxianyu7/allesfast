@@ -102,12 +102,16 @@ class Basement():
                 _idx = np.where(self.fitkeys == _key)[0][0]
                 self.theta_0[_idx] = np.median(self.data[_inst]['rv'])
 
-        # Load observed transit midtimes from midtimes.csv for ephemeris prior.
+        # Load observed transit midtimes for ephemeris prior.
+        # Enabled by setting  midtimes_file,midtimes.csv  in settings.csv.
         # Expected CSV with header: midtimes,err,pl_letter
         # e.g.  2456204.817,0.00074,b
-        self.ttv_data = {}
-        _midtimes_path = os.path.join(self.datadir, 'midtimes.csv')
-        if os.path.exists(_midtimes_path):
+        self.midtimes_data = {}
+        if self.settings.get('midtimes_file') is not None:
+            _midtimes_path = os.path.join(self.datadir, self.settings['midtimes_file'])
+            if not os.path.exists(_midtimes_path):
+                raise FileNotFoundError(
+                    f"midtimes_file is set but '{_midtimes_path}' not found.")
             import csv as _csv
             with open(_midtimes_path, newline='') as _fh:
                 _reader = _csv.DictReader(_fh)
@@ -115,13 +119,13 @@ class Basement():
                     _letter = _row['pl_letter'].strip()
                     _t      = float(_row['midtimes'])
                     _e      = float(_row['err'])
-                    if _letter not in self.ttv_data:
-                        self.ttv_data[_letter] = ([], [])
-                    self.ttv_data[_letter][0].append(_t)
-                    self.ttv_data[_letter][1].append(_e)
-            for _letter in self.ttv_data:
-                _ts, _es = self.ttv_data[_letter]
-                self.ttv_data[_letter] = (np.array(_ts), np.array(_es))
+                    if _letter not in self.midtimes_data:
+                        self.midtimes_data[_letter] = ([], [])
+                    self.midtimes_data[_letter][0].append(_t)
+                    self.midtimes_data[_letter][1].append(_e)
+            for _letter in self.midtimes_data:
+                _ts, _es = self.midtimes_data[_letter]
+                self.midtimes_data[_letter] = (np.array(_ts), np.array(_es))
 
         if self.settings['shift_epoch']:
             try:
@@ -361,10 +365,8 @@ class Basement():
         else:
             self.settings['use_sed_prior'] = False
 
-        if 'use_ttv_prior' in self.settings:
-            self.settings['use_ttv_prior'] = set_bool(self.settings['use_ttv_prior'])
-        else:
-            self.settings['use_ttv_prior'] = False
+        if ('midtimes_file' not in self.settings) or (str(self.settings['midtimes_file']).lower() == 'none') or (len(str(self.settings['midtimes_file'])) == 0):
+            self.settings['midtimes_file'] = None
 
         if ('sed_file' not in self.settings) or (str(self.settings['sed_file']).lower() == 'none') or (len(str(self.settings['sed_file'])) == 0):
             self.settings['sed_file'] = None
@@ -1012,6 +1014,35 @@ class Basement():
         self.ndim = len(self.theta_0)                   #len(ndim)
 
         #==========================================================================
+        #::: enforce EXOFASTv2-style hard bounds on MIST/SED parameters
+        # These are physical limits from the MIST grid and cosmology.
+        # User-given uniform bounds are clamped to these ranges automatically.
+        # (EXOFASTv2 Table 3, Eastman+2019)
+        #==========================================================================
+        # EXOFASTv2 Table 3 (Eastman+2019, explain.tex)
+        _hard_bounds = {
+            'logmstar':     (np.log10(0.001), np.log10(500)),  # 0.001 < Mstar <= 500 Msun
+            'rstar':        (1e-6, 2000.0),     # 1e-6 < Rstar < 2000 Rsun
+            'rstarsed':     (1e-6, 2000.0),
+            'teff':         (100.0, 250000.0),  # 100 < Teff < 250000 K
+            'teffsed':      (100.0, 250000.0),
+            'feh':          (-10.0, 2.0),       # -10 < [Fe/H] < 2
+
+            'initfeh':      (-5.0, 0.5),        # MIST grid: -5 <= [Fe/H]_0 <= 0.5
+            'eep':          (0.0, 1709.0),      # 0 <= EEP <= 1709
+            'age':          (0.0, 13.82),        # age of the universe (Gyr)
+            'av':           (0.0, 100.0),        # 0 <= Av <= 100 mag
+            'sed_errscale': (0.01, 100.0),       # 0.01 < sigma_SED < 100
+        }
+        for i, key in enumerate(self.fitkeys):
+            for suffix, (hlo, hhi) in _hard_bounds.items():
+                if key.endswith('_' + suffix) or key == suffix:
+                    b = self.bounds[i]
+                    if b[0] == 'uniform':
+                        b[1] = max(b[1], hlo)
+                        b[2] = min(b[2], hhi)
+
+        #==========================================================================
         #::: vsini Gaussian prior — read from non-fit A_vsini row with normal bounds
         #    (used when sampling in sv-space: A_svsinicoslambda / A_svsinisinlambda)
         #==========================================================================
@@ -1036,6 +1067,40 @@ class Basement():
                     f'Remove it from params.csv; it is always derived from '
                     f'A_mstar, A_rstar, and {companion}_period via Kepler\'s 3rd law.'
                 )
+
+        #==========================================================================
+        #::: warn about SED-specific parameters (teffsed, rstarsed, fehsed)
+        #==========================================================================
+        # Reject fehsed: its coupling logic differs from EXOFASTv2 and is
+        # error-prone.  Users should remove fehsed from params.csv; the SED
+        # code will fall back to feh automatically.
+        _feh_seds = [k for k in self.allkeys if k.endswith('_fehsed')]
+        if _feh_seds:
+            raise ValueError(
+                'fehsed parameters are not supported: ' +
+                ', '.join(_feh_seds) + '.\n'
+                'The fehsed coupling logic differs from EXOFASTv2 and has '
+                'been permanently disabled.\n'
+                'Please remove all *_fehsed entries from params.csv. '
+                'The SED code will automatically fall back to the '
+                'corresponding *_feh parameter.'
+            )
+
+        _sed_params_present = [k for k in self.allkeys
+                               if k.endswith(('_teffsed', '_rstarsed'))]
+        if _sed_params_present:
+            _teffsedfloor = float(self.settings.get('teffsedfloor', 0.02))
+            warnings.warn(
+                '\nYou are using SED-specific parameter(s): ' +
+                ', '.join(_sed_params_present) + '.\n'
+                'These decouple the SED atmosphere from the spectroscopic/MIST '
+                'parameters. In EXOFASTv2 the same Teff, Rstar, and [Fe/H] are '
+                'used everywhere.\n'
+                'Make sure this is intentional. If not, remove the *sed params '
+                'from params.csv — the SED code already falls back to the '
+                'standard parameters when the *sed variants are absent.\n'
+            )
+
 
         #::: luser proof: check if all initial guesses lie within their bounds
         #==========================================================================

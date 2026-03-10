@@ -117,8 +117,9 @@ def get_burnndx(log_prob):
     """
     Determine the burn-in index from the log-probability chain.
 
-    Mirrors EXOFASTv2's getburnndx: burn-in ends at the last stored step
-    before ALL walkers have crossed above the median log-probability.
+    Delegates to the EXOFASTv2-faithful ``_getburnndx`` in demcpt.py,
+    which also identifies good chains.  This wrapper returns only the
+    burn-in index for backward compatibility.
 
     Parameters
     ----------
@@ -130,22 +131,10 @@ def get_burnndx(log_prob):
     burnndx : int
         Index into the stored-step array.  Discard steps 0..burnndx-1.
     """
-    median_lp = np.median(log_prob)
-    nsteps, nwalkers = log_prob.shape
-
-    last_below = np.zeros(nwalkers, dtype=int)
-    for w in range(nwalkers):
-        below = np.where(log_prob[:, w] < median_lp)[0]
-        last_below[w] = below[-1] if len(below) else 0
-
-    burnndx = int(np.max(last_below)) + 1
-    # Always keep at least 25 % of the chain (or at least 50 steps) for
-    # post-burn-in analysis.  Without this cap, an unconverged chain where a
-    # single walker last dips below the median on the final step would set
-    # burnndx = nsteps-1, leaving only 1 thinned step and making corner plots,
-    # autocorrelation estimates, and parameter summaries meaningless.
-    min_eval = max(50, nsteps // 4)
-    return min(burnndx, nsteps - min_eval)
+    from .demcpt import _getburnndx
+    chi2 = -2.0 * log_prob
+    burnndx, _good = _getburnndx(chi2)
+    return burnndx
 
 
 ###########################################################################
@@ -217,6 +206,15 @@ def run_de_optimization(s):
             raise ValueError(f'Unknown bound type for DE: {b[0]}')
     de_bounds = np.array(de_bounds)
 
+    # # --- freeze sed_errscale during DE (fix to initial value) ---
+    # # Prevents errscale from inflating and effectively disabling the SED
+    # # constraint.  The parameter is freed again during MCMC.
+    # _errscale_freeze = {}  # {dim_index: frozen_value}
+    # for i, k in enumerate(config.BASEMENT.fitkeys):
+    #     if 'sed_errscale' in k:
+    #         _errscale_freeze[i] = config.BASEMENT.theta_0[i]
+    #         logprint(f"  Freezing {k} = {_errscale_freeze[i]} during DE")
+
     # --- multiprocessing pool (reuse settings from MCMC) ---
     pool = None
     if s.get('multiprocess', False):
@@ -254,6 +252,10 @@ def run_de_optimization(s):
             hi = min(de_bounds[idx, 1], center + _init_scale[idx])
             de._population[1:, idx] = np.random.uniform(lo, hi, npop - 1)
 
+        # # Pin frozen errscale in initial population
+        # for _fi, _fv in _errscale_freeze.items():
+        #     de._population[:, _fi] = _fv
+
         # --- iterate generation-by-generation so tqdm can track progress ---
         show_progress = s.get('print_progress', True)
         bar = None
@@ -266,6 +268,9 @@ def run_de_optimization(s):
         converged = False
         _conv_count = 0
         for _, best_fit in de(ngen):
+            # # Reset frozen sed_errscale after each DE generation
+            # for _fi, _fv in _errscale_freeze.items():
+            #     de._population[:, _fi] = _fv
             ngen_done += 1
             _fit = de._fitness
             _fin = _fit[np.isfinite(_fit)]
@@ -639,6 +644,12 @@ def run_amoeba_optimization(s, p0=None):
     scale = np.abs(scale)
     scale[scale == 0] = 1e-3
 
+    # # --- freeze sed_errscale during Amoeba (zero simplex step) ---
+    # for i, k in enumerate(config.BASEMENT.fitkeys):
+    #     if 'sed_errscale' in k:
+    #         scale[i] = 0.0
+    #         logprint(f"  Freezing {k} = {theta_0[i]} during Amoeba")
+
     show_progress = s.get('print_progress', True)
     bar           = None
     if show_progress:
@@ -816,7 +827,7 @@ def _run_emcee(s, p0_de=None, p0_best=None):
 ###########################################################################
 #::: DEMCPT backend
 ###########################################################################
-def _run_demcpt(s, p0_de=None):
+def _run_demcpt(s, p0_de=None, de_pop=None):
     """Run DEMCPTSampler. Returns the sampler."""
     outdir   = config.BASEMENT.outdir
     nchains  = s['mcmc_nwalkers']
@@ -833,6 +844,24 @@ def _run_demcpt(s, p0_de=None):
     save_file        = os.path.join(outdir, 'demcpt_save.h5')
     continue_old_run = os.path.exists(save_file)
 
+    # --- Determine MCMC scale ------------------------------------------------
+    # EXOFASTv2 uses exofast_getmcmcscale (Δχ²=1 binary search per param).
+    # We approximate this with the DE population std when available, which
+    # gives a similar estimate of the ~1σ posterior width.  Falls back to
+    # init_err (params.csv) or 1% of |p0| if nothing else is available.
+    if de_pop is not None and len(de_pop) > 2:
+        mcmc_scale = np.std(de_pop, axis=0)
+        mcmc_scale[mcmc_scale == 0] = 1e-8
+        logprint(f'  MCMC scale: from DE population std (median={np.median(mcmc_scale):.4e})')
+    else:
+        mcmc_scale = config.BASEMENT.init_err
+        if np.isscalar(mcmc_scale) or np.all(mcmc_scale < 1e-6):
+            logprint('  WARNING: init_err not set or too small; '
+                     'using 1%% of |p0| as MCMC scale')
+            p0_tmp = p0_de if p0_de is not None else config.BASEMENT.theta_0
+            mcmc_scale = np.abs(p0_tmp) * 0.01
+            mcmc_scale[mcmc_scale == 0] = 1e-8
+
     logprint(f'  nchains={nchains}  ntemps={ntemps}  target_thinned_steps={nsteps}  nthin={nthin}')
     logprint(f'  maxgr={maxgr}  mintz={mintz}  nworkers={nworkers}')
 
@@ -841,7 +870,7 @@ def _run_demcpt(s, p0_de=None):
         logprint(f'\nResuming from {save_file}')
         sampler   = DEMCPTSampler.load(save_file, mcmc_lnprob)
         converged = sampler._run_continue(
-            nsteps=nsteps, nthin=nthin, scale=config.BASEMENT.init_err,
+            nsteps=nsteps, nthin=nthin, scale=mcmc_scale,
             progress=s.get('print_progress', True), nworkers=nworkers,
             save_every=max(nsteps // 10, 1), save_file=save_file,
             deadline=deadline,
@@ -854,7 +883,7 @@ def _run_demcpt(s, p0_de=None):
         )
         converged = sampler.run(
             p0=p0_start, nsteps=nsteps, nthin=nthin,
-            scale=config.BASEMENT.init_err,
+            scale=mcmc_scale, population=de_pop,
             progress=s.get('print_progress', True), nworkers=nworkers,
             save_every=max(nsteps // 10, 1), save_file=save_file,
             deadline=deadline,
@@ -922,7 +951,7 @@ def mcmc_fit(datadir, method=None):
     if method == 'emcee':
         sampler = _run_emcee(s, p0_de=de_pop, p0_best=best_p0)
     elif method == 'demcpt':
-        sampler = _run_demcpt(s, p0_de=best_p0)
+        sampler = _run_demcpt(s, p0_de=best_p0, de_pop=de_pop)
     else:
         raise ValueError(
             f"Unknown mcmc_sampler: {method!r}. Choose 'emcee' or 'demcpt'."

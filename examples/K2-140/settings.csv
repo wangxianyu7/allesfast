@@ -5,7 +5,7 @@ companions_rv,b
 inst_phot,K2 TESS120
 inst_rv,CORALIE FIES HARPS HIRES
 mcmc_sampler,demcpt
-mcmc_total_steps,20000
+mcmc_total_steps,10000
 mcmc_nwalkers,64
 mcmc_ntemps,8
 mcmc_thin_by,10
@@ -41,4 +41,5 @@ error_rv_CORALIE,sample
 error_rv_FIES,sample
 error_rv_HARPS,sample
 error_rv_HIRES,sample
+midtimes_file,midtimes.csv
 cornerplot,False

@@ -112,12 +112,13 @@ def sed_chi2(
         return np.inf
 
     try:
-        # EXOFASTv2 style: use teffsed/rstarsed/fehsed for SED if available,
-        # else fall back to teff/rstar/feh.  logg and lstar derived from rstarsed.
+        # EXOFASTv2 style: use teffsed/rstarsed for SED if available,
+        # else fall back to teff/rstar.  logg and lstar derived from rstarsed.
+        # NOTE: fehsed is permanently disabled; SED always uses feh.
         teff_arr     = np.array([float(s.teffsed  if s.teffsed  is not None else s.teff)  for s in stars])
         rstar_sed    = np.array([float(s.rstarsed if s.rstarsed is not None else s.rstar) for s in stars])
         logg_arr     = np.array([_derive_logg(float(s.mstar), rstar_sed[i]) for i, s in enumerate(stars)])
-        feh_arr      = np.array([float(s.fehsed   if s.fehsed   is not None else s.feh)   for s in stars])
+        feh_arr      = np.array([float(s.feh) for s in stars])
         av_arr       = np.array([float(s.av)       for s in stars])
         distance_arr = np.array([float(s.distance) for s in stars])
         lstar_arr    = np.array([_derive_lstar(teff_arr[i], rstar_sed[i]) for i in range(len(stars))])

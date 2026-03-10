@@ -133,9 +133,63 @@ def plot_MCMC_chains(sampler):
 
     plt.tight_layout()
     return fig, axes
-    
-    
-    
+
+
+def plot_MCMC_posteriors(sampler):
+    """Plot per-chain KDE posteriors with an overall average line.
+
+    Each walker/chain is drawn as a thin coloured KDE curve so mixing
+    quality is immediately visible.  A thick red line shows the combined
+    posterior from all chains.
+    """
+    from scipy.stats import gaussian_kde
+
+    discard = int(1. * config.BASEMENT.settings['mcmc_burn_steps']
+                  / config.BASEMENT.settings['mcmc_thin_by'])
+    # chain shape: (nsteps, nwalkers, ndim)
+    chain = sampler.get_chain(discard=discard)
+    nsteps, nwalkers, ndim = chain.shape
+
+    n_panels = ndim
+    ncols = 2
+    nrows = int(np.ceil(n_panels / ncols))
+    fig, axes = plt.subplots(nrows, ncols, figsize=(12, 3.5 * nrows))
+    axf = axes.flatten()
+
+    # colour cycle for individual chains
+    cmap = plt.cm.get_cmap('tab20', nwalkers)
+
+    for i in range(ndim):
+        ax = axf[i]
+        all_vals = chain[:, :, i].flatten()
+        xmin, xmax = np.percentile(all_vals, [0.5, 99.5])
+        xgrid = np.linspace(xmin, xmax, 200)
+
+        # per-chain KDE
+        for w in range(nwalkers):
+            vals_w = chain[:, w, i]
+            if np.std(vals_w) == 0:
+                continue
+            try:
+                kde_w = gaussian_kde(vals_w)
+                ax.plot(xgrid, kde_w(xgrid), color=cmap(w), alpha=0.3, lw=0.5)
+            except Exception:
+                pass
+
+        # combined KDE (thick red line)
+        if np.std(all_vals) > 0:
+            kde_all = gaussian_kde(all_vals)
+            ax.plot(xgrid, kde_all(xgrid), color='red', lw=2.0)
+
+        ax.set(title=config.BASEMENT.fitkeys[i], ylabel='Probability', yticks=[])
+
+    for j in range(n_panels, len(axf)):
+        axf[j].set_visible(False)
+
+    plt.tight_layout()
+    return fig, axes
+
+
 # ##############################################################################
 # ::: plot the MCMC corner plot (arviz-based, memory-efficient)
 # ##############################################################################
@@ -342,12 +396,13 @@ def mcmc_output(datadir, quiet=False):
     
     #::: plot the chains
     fig, axes = plot_MCMC_chains(reader)
-    try: #some matplotlib versions cannot handle jpg
-        fig.savefig( os.path.join(config.BASEMENT.outdir,'mcmc_chains.jpg'), bbox_inches='tight' )
-    except:
-        fig.savefig( os.path.join(config.BASEMENT.outdir,'mcmc_chains.pdf'), bbox_inches='tight' )
+    fig.savefig( os.path.join(config.BASEMENT.outdir,'mcmc_chains.pdf'), bbox_inches='tight' )
     plt.close(fig)
 
+    #::: plot the 1-D posterior distributions
+    fig, axes = plot_MCMC_posteriors(reader)
+    fig.savefig( os.path.join(config.BASEMENT.outdir,'mcmc_posteriors.pdf'), bbox_inches='tight' )
+    plt.close(fig)
 
     #::: plot the corner
     if config.BASEMENT.settings['cornerplot']:
