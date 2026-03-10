@@ -417,6 +417,10 @@ class Basement():
             self.settings['mcmc_maxgr'] = 1.01
         if 'mcmc_mintz' not in self.settings:
             self.settings['mcmc_mintz'] = 1000
+        if 'mcmc_convergence_factor' not in self.settings:
+            self.settings['mcmc_convergence_factor'] = 50  # early stop when chain > N * tau
+        if 'mcmc_check_every' not in self.settings:
+            self.settings['mcmc_check_every'] = 500  # thinned steps between convergence checks
         if 'max_hours' in self.settings:
             self.settings['max_hours'] = float(self.settings['max_hours'])
         else:

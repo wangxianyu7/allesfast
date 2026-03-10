@@ -954,33 +954,52 @@ def _run_emcee(s, p0_de=None, p0_best=None):
         logprint("\nRunning full MCMC")
         deadline = s.get('_deadline', None)
         remaining_steps = int((s['mcmc_total_steps'] - already_completed_steps) / s['mcmc_thin_by'])
-        if deadline is None:
-            sampler.run_mcmc(
-                p0,
-                remaining_steps,
-                thin_by=int(s['mcmc_thin_by']),
-                progress=s['print_progress'],
-            )
-        else:
-            # Run in chunks of 100 thinned steps so we can check the deadline
-            chunk = 100
-            done = 0
-            pos = p0
-            while done < remaining_steps:
-                if timer() >= deadline:
-                    logprint(f"\n  emcee stopped early at {done}/{remaining_steps} thinned steps: time limit reached.")
-                    break
-                n = min(chunk, remaining_steps - done)
-                sampler.run_mcmc(pos, n, thin_by=int(s['mcmc_thin_by']),
-                                 progress=False, skip_initial_state_check=True)
-                pos = sampler.get_last_sample()
-                done += n
-                if s['print_progress']:
-                    pct = 100.0 * done / remaining_steps
-                    print(f"\r  emcee {pct:.1f}% ({done}/{remaining_steps} steps)   ",
-                          end="", flush=True)
+        thin_by = int(s['mcmc_thin_by'])
+        tau_factor = float(s.get('mcmc_convergence_factor', 50))
+        check_every = int(s.get('mcmc_check_every', 500))  # thinned steps between convergence checks
+        min_steps_before_check = max(check_every, 200)  # don't check too early
+
+        # Unified chunked loop: checks deadline + autocorrelation convergence
+        chunk = min(check_every, 100)
+        done = 0
+        pos = p0
+        converged = False
+        steps_since_check = 0
+        while done < remaining_steps:
+            if deadline is not None and timer() >= deadline:
+                logprint(f"\n  emcee stopped early at {done}/{remaining_steps} thinned steps: time limit reached.")
+                break
+            n = min(chunk, remaining_steps - done)
+            sampler.run_mcmc(pos, n, thin_by=thin_by,
+                             progress=False, skip_initial_state_check=True)
+            pos = sampler.get_last_sample()
+            done += n
+            steps_since_check += n
+
             if s['print_progress']:
-                print()
+                pct = 100.0 * done / remaining_steps
+                print(f"\r  emcee {pct:.1f}% ({done}/{remaining_steps} steps)   ",
+                      end="", flush=True)
+
+            # Convergence check via autocorrelation time
+            if steps_since_check >= check_every and done >= min_steps_before_check:
+                steps_since_check = 0
+                try:
+                    tau = sampler.get_autocorr_time(tol=0)
+                    chain_lengths = done / tau
+                    if np.all(chain_lengths > tau_factor) and np.all(np.isfinite(tau)):
+                        logprint(f"\n  emcee converged at {done}/{remaining_steps} thinned steps: "
+                                 f"all chains > {tau_factor:.0f}x tau "
+                                 f"(min={np.min(chain_lengths):.1f}x, max tau={np.max(tau):.1f})")
+                        converged = True
+                        break
+                except emcee.autocorr.AutocorrError:
+                    pass  # not enough samples yet
+
+        if s['print_progress']:
+            print()
+        if not converged and done >= remaining_steps:
+            logprint(f"  emcee completed {done} thinned steps (max reached).")
         return sampler
 
     _moves = [(emcee.moves.DEMove(), 0.8), (emcee.moves.DESnookerMove(), 0.2)]
@@ -1130,12 +1149,17 @@ def mcmc_fit(datadir, method=None):
             f"Unknown mcmc_sampler: {method!r}. Choose 'emcee' or 'demcpt'."
         )
 
+    # Update mcmc_total_steps to reflect actual chain length (may differ from
+    # requested if early stop or time limit kicked in)
+    actual_thinned = sampler.get_chain().shape[0]
+    nthin = int(s['mcmc_thin_by'])
+    s['mcmc_total_steps'] = actual_thinned * nthin
+
     t1 = timer()
     logprint(f"\nTime taken: {(t1 - t0) / 3600:.2f} hours")
 
     #::: shared epilogue: auto burn-in + acceptance fractions
     log_prob = sampler.get_log_prob()       # (nsteps, nwalkers/nchains)
-    nthin    = int(s['mcmc_thin_by'])
     burnndx  = get_burnndx(log_prob)
     s['mcmc_burn_steps'] = burnndx * nthin
     logprint(f'\nAuto burn-in: stored step {burnndx} → {s["mcmc_burn_steps"]} total steps '
