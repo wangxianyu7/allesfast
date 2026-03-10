@@ -271,32 +271,26 @@ def print_autocorr(sampler):
     logprint('\nConvergence check')
     logprint('-------------------')
     
-    logprint('{0: <20}'.format('Total steps:'),        '{0: <10}'.format(config.BASEMENT.settings['mcmc_total_steps']))
-    logprint('{0: <20}'.format('Burn steps:'),         '{0: <10}'.format(config.BASEMENT.settings['mcmc_burn_steps']))
-    logprint('{0: <20}'.format('Evaluation steps:'),   '{0: <20}'.format(config.BASEMENT.settings['mcmc_total_steps'] - config.BASEMENT.settings['mcmc_burn_steps']))
-    
-    N_evaluation_samples = int( 1. * config.BASEMENT.settings['mcmc_nwalkers'] * (config.BASEMENT.settings['mcmc_total_steps']-config.BASEMENT.settings['mcmc_burn_steps']) / config.BASEMENT.settings['mcmc_thin_by'] )
+    total_steps = config.BASEMENT.settings['mcmc_total_steps']
+    nthin = config.BASEMENT.settings['mcmc_thin_by']
+    total_thinned = int(total_steps / nthin)
+    discard = total_thinned // 2  # discard first 50%, consistent with early-stop check
+    burn_steps = discard * nthin
+    eval_steps = total_steps - burn_steps
+
+    logprint('{0: <20}'.format('Total steps:'),        '{0: <10}'.format(total_steps))
+    logprint('{0: <20}'.format('Burn steps (50%):'),   '{0: <10}'.format(burn_steps))
+    logprint('{0: <20}'.format('Evaluation steps:'),   '{0: <20}'.format(eval_steps))
+
+    N_evaluation_samples = int(config.BASEMENT.settings['mcmc_nwalkers'] * eval_steps / nthin)
     logprint('{0: <20}'.format('Evaluation samples:'),   '{0: <20}'.format(N_evaluation_samples))
-     
-    # if N_evaluation_samples>200000:
-    #     answer = input('It seems like you are asking for ' + str(N_evaluation_samples) + 'MCMC evaluation samples (calculated as mcmc_nwalkers * (mcmc_total_steps-mcmc_burn_steps) / mcmc_thin_by).'+\
-    #                     'That is an aweful lot of samples.'+\
-    #                     'What do you want to do?\n'+\
-    #                     '1 : continue at any sacrifice\n'+\
-    #                     '2 : abort and increase the mcmc_thin_by parameter in settings.csv (do not do this if you continued an old run!)\n')
-    #     if answer==1: 
-    #         pass
-    #     else:
-    #         raise ValueError('User aborted the run.')
 
-
-    discard=int(1.*config.BASEMENT.settings['mcmc_burn_steps']/config.BASEMENT.settings['mcmc_thin_by'])
-    tau = sampler.get_autocorr_time(discard=discard, c=5, tol=10, quiet=True)*config.BASEMENT.settings['mcmc_thin_by']
+    tau = sampler.get_autocorr_time(discard=discard, c=5, tol=10, quiet=True) * nthin
     logprint('Autocorrelation times:')
     logprint('\t', '{0: <30}'.format('parameter'), '{0: <20}'.format('tau (in steps)'), '{0: <20}'.format('Chain length (in multiples of tau)'))
     converged = True
     for i, key in enumerate(config.BASEMENT.fitkeys):
-        chain_length = (1.*(config.BASEMENT.settings['mcmc_total_steps'] - config.BASEMENT.settings['mcmc_burn_steps']) / tau[i])
+        chain_length = (1. * eval_steps / tau[i])
         logprint('\t', '{0: <30}'.format(key), '{0: <20}'.format(tau[i]), '{0: <20}'.format(chain_length))
         if (chain_length < 50) or np.isinf(chain_length) or np.isnan(chain_length):
             converged = False

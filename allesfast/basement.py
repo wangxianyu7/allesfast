@@ -54,15 +54,43 @@ import re as _re
 def _sanitize_latex_label(label):
     """Fix common LaTeX issues in parameter labels that crash matplotlib.
 
-    Handles double subscripts like $\\sigma^2_{\\rm BFOSC_Cassini_1_52m}$ by
-    wrapping everything after the first bare _ into a single {} group and
-    replacing remaining underscores inside that group with dots.
+    1. Replaces underscores inside {\\rm ...} blocks with dots, since
+       matplotlib's mathtext still treats _ as subscript inside \\rm.
+    2. Wraps everything after the first bare _ into a single {} group
+       to prevent double-subscript errors.
     """
     label = str(label)
+
+    def _fix_rm_underscores(inner):
+        """Replace _ with . after \\rm (and similar font commands) until }."""
+        result = list(inner)
+        for cmd in ('\\rm', '\\it', '\\bf', '\\sf', '\\tt'):
+            i = 0
+            while True:
+                pos = ''.join(result).find(cmd, i)
+                if pos < 0:
+                    break
+                # Replace all _ after this \rm until matching }
+                depth = 0
+                j = pos + len(cmd)
+                while j < len(result):
+                    if result[j] == '{':
+                        depth += 1
+                    elif result[j] == '}':
+                        if depth == 0:
+                            break
+                        depth -= 1
+                    elif result[j] == '_':
+                        result[j] = '.'
+                    j += 1
+                i = pos + len(cmd)
+        return ''.join(result)
 
     def _fix_math(m):
         """Fix a single $...$ math block."""
         inner = m.group(1)
+        # First pass: replace _ inside \rm blocks with dots
+        inner = _fix_rm_underscores(inner)
         # Count bare underscores (not already inside braces)
         depth = 0
         n_underscores = 0
@@ -74,7 +102,7 @@ def _sanitize_latex_label(label):
             elif ch == '_' and depth == 0:
                 n_underscores += 1
         if n_underscores < 2:
-            return m.group(0)  # no problem
+            return '$' + inner + '$'
         # Wrap: put everything after first bare _ into one {...} group,
         # and replace remaining bare underscores with dots
         depth = 0
