@@ -939,7 +939,29 @@ class Basement():
                 validate(companion+'_heat_'+inst, None, -np.inf, np.inf)
                 validate(companion+'_lambda', None, -np.inf, np.inf)
                 validate(companion+'_vsini', None, -np.inf, np.inf)
-        
+
+                #::: validate xi/zeta for RM fitting
+                _fw_key = companion+'_flux_weighted_'+inst
+                if self.settings.get(_fw_key, False):
+                    has_xi   = ('A_xi' in self.params and self.params['A_xi'] is not None)
+                    has_vxi  = ('A_vxi_scale' in self.params and self.params['A_vxi_scale'] is not None)
+                    has_zeta = ('A_zeta' in self.params and self.params['A_zeta'] is not None)
+                    has_vzeta = ('A_vzeta_scale' in self.params and self.params['A_vzeta_scale'] is not None)
+                    if not (has_xi or has_vxi):
+                        raise ValueError(
+                            f"RM fitting is enabled ({_fw_key}={self.settings[_fw_key]}) "
+                            f"but neither 'A_xi' nor 'A_vxi_scale' is defined in params.csv. "
+                            f"Please add one of them (A_xi for direct fit, or "
+                            f"A_vxi_scale with bounds e.g. uniform 0.5 2.0 for scaled empirical relation)."
+                        )
+                    if not (has_zeta or has_vzeta):
+                        raise ValueError(
+                            f"RM fitting is enabled ({_fw_key}={self.settings[_fw_key]}) "
+                            f"but neither 'A_zeta' nor 'A_vzeta_scale' is defined in params.csv. "
+                            f"Please add one of them (A_zeta for direct fit, or "
+                            f"A_vzeta_scale with bounds e.g. uniform 0.5 2.0 for scaled empirical relation)."
+                        )
+
                 #::: special parameters (list type)
                 if 'A_spots_'+inst not in self.params:
                     self.params['A_spots_'+inst] = None
