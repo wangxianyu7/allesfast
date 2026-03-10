@@ -974,9 +974,13 @@ class Basement():
         #::: coupled_tolerance (soft-link Gaussian sigma; 0 = exact link)
         #==========================================================================
         if 'coupled_tolerance' in buf.dtype.names:
-            self.coupled_tolerance = np.nan_to_num(
-                buf['coupled_tolerance'].astype(float), nan=0.0
-            )
+            tol_col = buf['coupled_tolerance']
+            if tol_col.dtype.kind == 'b':  # genfromtxt inferred bool (all-empty column)
+                self.coupled_tolerance = np.zeros(len(tol_col))
+            else:
+                tol_raw = np.asarray(tol_col, dtype=str)
+                tol_raw = np.where(np.isin(tol_raw, ['', 'nan', "b''", 'False', 'True', 'false', 'true']), '0.0', tol_raw)
+                self.coupled_tolerance = tol_raw.astype(float)
         else:
             self.coupled_tolerance = np.zeros(len(self.allkeys))
 

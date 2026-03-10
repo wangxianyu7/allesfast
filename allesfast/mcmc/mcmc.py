@@ -111,6 +111,172 @@ def mcmc_lnprob(theta):
 
 
 ###########################################################################
+#::: EXOFASTv2-style MCMC scale (Δχ²=1 per parameter)
+###########################################################################
+def getmcmcscale(bestpars, lnprob_func, seedscale=None, maxiter=10000,
+                 debug=False):
+    """Determine per-parameter MCMC step scale via Δχ²=1 binary search.
+
+    Faithful Python port of EXOFASTv2's ``exofast_getmcmcscale.pro``.
+
+    For each parameter, takes a positive and negative step from *bestpars*,
+    doubling the step until Δχ² > 1, then binary-searches for the step that
+    gives Δχ² ≈ 1.  The average of the positive and negative excursions is
+    returned as the optimal MCMC scale.
+
+    Parameters
+    ----------
+    bestpars : 1-D array (nfit,)
+        Best-fit parameter vector.
+    lnprob_func : callable
+        ``theta -> float`` returning log-posterior.
+    seedscale : 1-D array (nfit,) or None
+        Initial small step per parameter.  Default ``1e-3`` for each.
+    maxiter : int
+        Max iterations per direction per parameter.
+    debug : bool
+        Print progress.
+
+    Returns
+    -------
+    scale : 1-D array (nfit,)
+        Per-parameter step scale (≈ 1σ).
+    """
+    nfit = len(bestpars)
+    if seedscale is None:
+        seedscale = np.full(nfit, 1e-3)
+
+    bestchi2 = -2.0 * lnprob_func(bestpars)
+    if not np.isfinite(bestchi2):
+        raise RuntimeError('getmcmcscale: bestpars has non-finite chi²; '
+                           'refine starting values.')
+
+    origbestchi2 = bestchi2
+    bestpars = bestpars.copy()
+
+    # mcmcscale[i, 0] = positive direction, [i, 1] = negative direction
+    mcmcscale = np.column_stack([seedscale.copy(), seedscale.copy()])
+
+    for i in range(nfit):
+        for j in range(2):  # 0 = positive, 1 = negative
+            testpars = bestpars.copy()
+            minstep = 0.0
+            maxstep = 0.0
+            niter = 0
+            bestdeltachi2 = np.inf
+            bestscale = 0.0
+
+            while True:
+                # Check for infinite step
+                if (not np.isfinite(bestpars[i] + mcmcscale[i, j]) or
+                        not np.isfinite(bestpars[i] - mcmcscale[i, j])):
+                    mcmcscale[i, j] = np.nan
+                    break
+
+                # Apply offset
+                if j == 0:
+                    testpars[i] = bestpars[i] + mcmcscale[i, j]
+                else:
+                    testpars[i] = bestpars[i] - mcmcscale[i, j]
+
+                chi2 = -2.0 * lnprob_func(testpars)
+                chi2changed = False
+
+                if (chi2 - bestchi2) >= 1.0:
+                    # Too large → set max, bisect
+                    maxstep = mcmcscale[i, j]
+                    mcmcscale[i, j] = (maxstep + minstep) / 2.0
+                elif (chi2 - bestchi2) >= 0.0:
+                    # Too small → set min, double or bisect
+                    minstep = mcmcscale[i, j]
+                    if maxstep == 0.0:
+                        mcmcscale[i, j] *= 2.0
+                    else:
+                        mcmcscale[i, j] = (maxstep + minstep) / 2.0
+                else:
+                    # Found a better chi²!
+                    if debug:
+                        logprint(f'  getmcmcscale: better chi² found for '
+                                 f'param {i}: {chi2:.6f} < {bestchi2:.6f}')
+                    bestpars = testpars.copy()
+                    mcmcscale[i, j] *= 2.0
+                    bestchi2 = chi2
+                    niter = 0
+                    chi2changed = True
+
+                deltachi2 = chi2 - bestchi2
+                # Track best Δχ² closest to 1
+                if abs(deltachi2 - 1.0) < abs(bestdeltachi2 - 1.0):
+                    bestdeltachi2 = deltachi2
+                    bestscale = mcmcscale[i, j]
+
+                # Convergence: binary search exhausted or maxiter
+                if abs(minstep - maxstep) < 1e-12 or niter > maxiter:
+                    # Check if near a boundary
+                    testpars[i] = bestpars[i] - 2.0 * mcmcscale[i, j]
+                    lowchi2 = -2.0 * lnprob_func(testpars)
+                    testpars[i] = bestpars[i] + 2.0 * mcmcscale[i, j]
+                    hichi2 = -2.0 * lnprob_func(testpars)
+
+                    if (not np.isfinite(chi2) or not np.isfinite(lowchi2)
+                            or not np.isfinite(hichi2)):
+                        # Hit a boundary
+                        if bestscale != 0.0:
+                            mcmcscale[i, j] = bestscale / 100.0
+                        else:
+                            mcmcscale[i, j] = maxstep / 100.0
+                        break
+                    elif not chi2changed:
+                        if abs(bestdeltachi2 - 1.0) < 0.75:
+                            mcmcscale[i, j] = bestscale
+                        else:
+                            if bestdeltachi2 == 0.0:
+                                mcmcscale[i, j] = bestscale / 100.0
+                            else:
+                                mcmcscale[i, j] = bestscale / bestdeltachi2 / 10.0
+                            if debug:
+                                logprint(
+                                    f'  getmcmcscale: param {i} rough surface; '
+                                    f'Δχ²={bestdeltachi2:.4f}, '
+                                    f'scale={mcmcscale[i, j]:.6e}')
+                    break
+
+                niter += 1
+
+                if debug and niter % 500 == 0:
+                    direction = 'hi' if j == 0 else 'lo'
+                    logprint(f'  getmcmcscale: param {i} ({direction}) '
+                             f'iter={niter} min={minstep:.6e} max={maxstep:.6e} '
+                             f'Δχ²={deltachi2:.6f}')
+
+                # Check convergence
+                if abs(chi2 - bestchi2 - 1.0) < 1e-8:
+                    break
+
+    # Replace undefined scales with the other direction
+    for i in range(nfit):
+        if not np.isfinite(mcmcscale[i, 0]) or mcmcscale[i, 0] == 0:
+            mcmcscale[i, 0] = mcmcscale[i, 1]
+        if not np.isfinite(mcmcscale[i, 1]) or mcmcscale[i, 1] == 0:
+            mcmcscale[i, 1] = mcmcscale[i, 0]
+
+    # Check for completely undefined parameters
+    bad = ~np.isfinite(mcmcscale) | (mcmcscale == 0)
+    if np.any(bad):
+        bad_params = np.where(bad.any(axis=1))[0]
+        logprint(f'  WARNING: getmcmcscale failed for params {bad_params}; '
+                 f'using 1%% of |bestpars| as fallback')
+        for idx in bad_params:
+            fallback = abs(bestpars[idx]) * 0.01
+            if fallback == 0:
+                fallback = 1e-8
+            mcmcscale[idx, :] = fallback
+
+    # Return average of positive and negative excursions
+    return mcmcscale.sum(axis=1) / 2.0
+
+
+###########################################################################
 #::: Automatic burn-in detection (EXOFASTv2 getburnndx logic)
 ###########################################################################
 def get_burnndx(log_prob):
@@ -719,6 +885,16 @@ def _run_emcee(s, p0_de=None, p0_best=None):
 
     backend = emcee.backends.HDFBackend(save_h5)
 
+    # Compute init_scale: DE pop std > getmcmcscale > init_err fallback
+    if p0_de is not None and len(p0_de) > 2:
+        _init_scale = np.std(p0_de, axis=0)
+        _init_scale[_init_scale == 0] = 1e-8
+    elif p0_best is not None:
+        logprint('  Computing MCMC scale via Δχ²=1 search (emcee init)...')
+        _init_scale = getmcmcscale(p0_best, mcmc_lnprob, debug=False)
+    else:
+        _init_scale = config.BASEMENT.init_err
+
     def _run(sampler):
         if continue_old_run:
             p0 = backend.get_chain()[-1, :, :]
@@ -735,12 +911,14 @@ def _run_emcee(s, p0_de=None, p0_best=None):
                     repeats = (nwalkers // npop) + 1
                     p0 = np.tile(p0_de, (repeats, 1))[:nwalkers, :]
                 # Add small perturbation so walkers are not identical
-                p0 = p0 + config.BASEMENT.init_err * np.random.randn(nwalkers, config.BASEMENT.ndim)
+                p0 = p0 + _init_scale * 0.01 * np.random.randn(nwalkers, config.BASEMENT.ndim)
             else:
                 # Use p0_best (Amoeba/DE best) if available, else theta_0
                 centre = p0_best if p0_best is not None else config.BASEMENT.theta_0
+                # EXOFASTv2 style: scatter walkers by factor*scale*randn
+                factor = min(np.sqrt(500.0 / config.BASEMENT.ndim), 3.0)
                 p0 = (centre
-                      + config.BASEMENT.init_err
+                      + factor * _init_scale
                       * np.random.randn(nwalkers, config.BASEMENT.ndim))
             already_completed_steps = 0
 
@@ -766,8 +944,9 @@ def _run_emcee(s, p0_de=None, p0_best=None):
                 log_prob = sampler.get_log_prob(flat=True)
                 posterior_samples = sampler.get_chain(flat=True)
                 ind_max = np.argmax(log_prob)
+                factor = min(np.sqrt(500.0 / config.BASEMENT.ndim), 3.0)
                 p0 = (posterior_samples[ind_max, :]
-                      + config.BASEMENT.init_err
+                      + factor * _init_scale
                       * np.random.randn(s['mcmc_nwalkers'], config.BASEMENT.ndim))
                 os.remove(save_h5)
                 sampler.reset()
@@ -845,22 +1024,16 @@ def _run_demcpt(s, p0_de=None, de_pop=None):
     continue_old_run = os.path.exists(save_file)
 
     # --- Determine MCMC scale ------------------------------------------------
-    # EXOFASTv2 uses exofast_getmcmcscale (Δχ²=1 binary search per param).
-    # We approximate this with the DE population std when available, which
-    # gives a similar estimate of the ~1σ posterior width.  Falls back to
-    # init_err (params.csv) or 1% of |p0| if nothing else is available.
+    # Priority: 1) DE population std  2) Δχ²=1 binary search (EXOFASTv2)
     if de_pop is not None and len(de_pop) > 2:
         mcmc_scale = np.std(de_pop, axis=0)
         mcmc_scale[mcmc_scale == 0] = 1e-8
         logprint(f'  MCMC scale: from DE population std (median={np.median(mcmc_scale):.4e})')
     else:
-        mcmc_scale = config.BASEMENT.init_err
-        if np.isscalar(mcmc_scale) or np.all(mcmc_scale < 1e-6):
-            logprint('  WARNING: init_err not set or too small; '
-                     'using 1%% of |p0| as MCMC scale')
-            p0_tmp = p0_de if p0_de is not None else config.BASEMENT.theta_0
-            mcmc_scale = np.abs(p0_tmp) * 0.01
-            mcmc_scale[mcmc_scale == 0] = 1e-8
+        p0_start = p0_de if p0_de is not None else config.BASEMENT.theta_0
+        logprint('  Computing MCMC scale via Δχ²=1 search (EXOFASTv2 getmcmcscale)...')
+        mcmc_scale = getmcmcscale(p0_start, mcmc_lnprob, debug=False)
+        logprint(f'  MCMC scale: from Δχ²=1 search (median={np.median(mcmc_scale):.4e})')
 
     logprint(f'  nchains={nchains}  ntemps={ntemps}  target_thinned_steps={nsteps}  nthin={nthin}')
     logprint(f'  maxgr={maxgr}  mintz={mintz}  nworkers={nworkers}')
@@ -900,7 +1073,7 @@ def _run_demcpt(s, p0_de=None, de_pop=None):
     sampler.save_as_emcee_backend(mcmc_save_h5)
     logprint(f'\nSaved emcee-compatible backend: {mcmc_save_h5}')
 
-    sampler.summary(param_names=config.BASEMENT.fitkeys)
+    sampler.summary(param_names=config.BASEMENT.fitkeys, logger=logprint)
     return sampler
 
 

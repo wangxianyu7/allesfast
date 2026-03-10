@@ -841,10 +841,20 @@ class DEMCPTSampler:
 
     # ----- diagnostics -------------------------------------------------------
 
-    def summary(self, param_names=None):
-        """Print convergence summary and return diagnostics dict."""
+    def summary(self, param_names=None, logger=None):
+        """Print convergence summary and return diagnostics dict.
+
+        Parameters
+        ----------
+        param_names : list of str, optional
+            Human-readable parameter names.
+        logger : callable, optional
+            Logging function (e.g. ``logprint``).  Defaults to ``print``.
+        """
+        _log = logger if logger is not None else print
+
         if self._chain is None:
-            print("No chain. Call run() first.")
+            _log("No chain. Call run() first.")
             return None
 
         chi2 = -2.0 * self._log_prob
@@ -855,18 +865,31 @@ class DEMCPTSampler:
         Rhat, Tz = _gelman_rubin(post_burn)
 
         nsteps = self._chain.shape[0]
-        print(f"Steps: {nsteps}  Burn-in: {burnndx}  "
-              f"Good chains: {len(good)}/{self.nchains}")
+        _log(f"\nConvergence check (DEMCPT)")
+        _log(f"----------------------------")
+        _log(f"Steps: {nsteps}  Burn-in: {burnndx}  "
+             f"Good chains: {len(good)}/{self.nchains}")
         if n_bad:
-            print(f"  WARNING: {n_bad} bad chain(s) discarded")
-        print()
-        print(f"{'#':>4s}  {'Parameter':<16s} {'Rhat':>8s} {'Tz':>10s}  Status")
-        print("-" * 52)
+            _log(f"  WARNING: {n_bad} bad chain(s) discarded")
+        _log("")
+        _log(f"{'#':>4s}  {'Parameter':<16s} {'Rhat':>8s} {'Tz':>10s}  Status")
+        _log("-" * 52)
         for d in range(self.ndim):
             name = param_names[d] if param_names is not None and d < len(param_names) else str(d)
             ok = Rhat[d] < self.maxgr and Tz[d] > self.mintz
             mark = "OK" if ok else "**BAD**"
-            print(f"{d:4d}  {name:<16s} {Rhat[d]:8.4f} {Tz[d]:10.1f}  {mark}")
+            _log(f"{d:4d}  {name:<16s} {Rhat[d]:8.4f} {Tz[d]:10.1f}  {mark}")
+
+        all_ok = all(
+            Rhat[d] < self.maxgr and Tz[d] > self.mintz
+            for d in range(self.ndim)
+        )
+        _log("")
+        if all_ok:
+            _log("All parameters converged (Rhat < %.2f, Tz > %d)." %
+                 (self.maxgr, self.mintz))
+        else:
+            _log("WARNING: Some parameters have NOT converged!")
 
         return {"Rhat": Rhat, "Tz": Tz, "burnin": burnndx,
                 "good_chains": good, "n_bad": n_bad}
