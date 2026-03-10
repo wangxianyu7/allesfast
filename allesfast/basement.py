@@ -54,8 +54,9 @@ import re as _re
 def _sanitize_latex_label(label):
     """Fix common LaTeX issues in parameter labels that crash matplotlib.
 
-    Handles double subscripts like $T_eff_star$ → $T_{eff\_star}$ by wrapping
-    everything after the first _ inside a single {} group within each $...$ block.
+    Handles double subscripts like $\\sigma^2_{\\rm BFOSC_Cassini_1_52m}$ by
+    wrapping everything after the first bare _ into a single {} group and
+    replacing remaining underscores inside that group with dots.
     """
     label = str(label)
 
@@ -63,7 +64,6 @@ def _sanitize_latex_label(label):
         """Fix a single $...$ math block."""
         inner = m.group(1)
         # Count bare underscores (not already inside braces)
-        # Simple heuristic: if there are >=2 underscores at the top level, fix it
         depth = 0
         n_underscores = 0
         for ch in inner:
@@ -75,7 +75,8 @@ def _sanitize_latex_label(label):
                 n_underscores += 1
         if n_underscores < 2:
             return m.group(0)  # no problem
-        # Wrap: put everything after first bare _ into one {...} group
+        # Wrap: put everything after first bare _ into one {...} group,
+        # and replace remaining bare underscores with dots
         depth = 0
         result = []
         first_found = False
@@ -89,6 +90,9 @@ def _sanitize_latex_label(label):
             elif ch == '_' and depth == 0 and not first_found:
                 first_found = True
                 result.append('_{')
+                depth += 1
+            elif ch == '_' and first_found:
+                result.append('.')
             else:
                 result.append(ch)
         if first_found:

@@ -1086,7 +1086,6 @@ def _run_emcee(s, p0_de=None, p0_best=None):
         )
         sampler = _run(sampler)
 
-    print_autocorr(sampler)
     return sampler
 
 
@@ -1232,6 +1231,8 @@ def mcmc_fit(datadir, method=None):
     s['mcmc_burn_steps'] = burnndx * nthin
     logprint(f'\nAuto burn-in: stored step {burnndx} → {s["mcmc_burn_steps"]} total steps '
              f'({100. * burnndx / log_prob.shape[0]:.0f}% of chain)')
+
+    print_autocorr(sampler)
 
     if method == 'emcee':
         logprint('\nAcceptance fractions:')
