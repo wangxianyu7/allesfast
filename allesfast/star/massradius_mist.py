@@ -199,7 +199,7 @@ def _load_track_tuple(mstar, feh, vvcrit, alpha):
     ages, rstars, teffs, fehs, ageweights = track_arr
     return ages.astype(float), rstars.astype(float), teffs.astype(float), fehs.astype(float), ageweights.astype(float)
 
-def massradius_mist(eep, mstar, feh, teff, rstar, age=None, vvcrit=None, alpha=None, span=1, epsname=None, debug=False,
+def massradius_mist(eep, mstar, feh, teff, rstar, obsfeh=None, age=None, vvcrit=None, alpha=None, span=1, epsname=None, debug=False,
                     gravitysun=27420.011, fitage=False, ageweight=None, verbose=False, logname=None,
                     trackfile=None, allowold=False, tefffloor=None, fehfloor=None, rstarfloor=None,
                     agefloor=None, pngname=None, range=None):
@@ -347,12 +347,14 @@ def massradius_mist(eep, mstar, feh, teff, rstar, age=None, vvcrit=None, alpha=N
 
     percenterror = 0.03 - 0.025 * np.log10(mstar) + 0.045 * (np.log10(mstar))**2
 
-    # chi2 penalises departures of the *fitted* (teff, rstar, feh) from the
-    # MIST track prediction at this EEP.  Age is now a derived quantity, so
-    # there is no chi2_age term.
+    # chi2 penalises departures of the *observed* (teff, rstar, feh) from the
+    # MIST track prediction at this EEP.  Following EXOFASTv2: initfeh (feh arg)
+    # drives track interpolation, but chi2_feh compares mistfeh to the observed
+    # spectroscopic feh (obsfeh).  If obsfeh is not provided, falls back to feh.
+    _obsfeh = obsfeh if obsfeh is not None else feh
     chi2_rstar = ((mistrstar - rstar) / (rstarfloor * mistrstar if rstarfloor > 0 else percenterror * mistrstar))**2
     chi2_teff  = ((mistteff  - teff)  / (tefffloor  * mistteff  if tefffloor  > 0 else percenterror * mistteff))**2
-    chi2_feh   = ((mistfeh   - feh)   / (fehfloor                if fehfloor   > 0 else percenterror))**2
+    chi2_feh   = ((mistfeh   - _obsfeh) / (fehfloor              if fehfloor   > 0 else percenterror))**2
 
     chi2 = chi2_rstar + chi2_teff + chi2_feh
 
