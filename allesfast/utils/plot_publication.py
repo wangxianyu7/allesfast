@@ -391,12 +391,20 @@ def _compute_t14(params, companion='b'):
     w = np.arctan2(f_s, f_c)
     sini = np.sqrt(1.0 - cosi**2)
     R_star_over_a = rsuma / (1.0 + rr)
-    b = cosi / R_star_over_a  # impact parameter
+    # For eccentric orbits the planet–star separation at transit is
+    # r/a = (1-e²)/(1+e·sin(ω)), so the effective impact parameter is
+    # b = (a·cos i / R*) · (1-e²)/(1+e·sin(ω))
+    ecc_factor = (1.0 - e**2) / (1.0 + e * np.sin(w)) if e > 0 else 1.0
+    b = cosi / R_star_over_a * ecc_factor
 
-    arg = R_star_over_a * np.sqrt((1.0 + rr)**2 - b**2) / sini
+    inner = (1.0 + rr)**2 - b**2
+    if inner < 0:
+        return np.nan
+    arg = R_star_over_a * np.sqrt(inner) / sini
     arg = np.clip(arg, 0, 1)
     ecc_corr = np.sqrt(1.0 - e**2) / (1.0 + e * np.sin(w))
-    return per / np.pi * np.arcsin(arg) * ecc_corr * 24.0  # hours
+    result = per / np.pi * np.arcsin(arg) * ecc_corr * 24.0  # hours
+    return result if np.isfinite(result) else np.nan
 
 
 def _bin_data(x, y, yerr, bin_minutes):
@@ -524,7 +532,7 @@ def _plot_transit(ax_top, ax_bot, d, period, epoch, t14_hrs=None,
     resid = d['residuals']
 
     # Filter to near-transit data only (within ±T14 window)
-    if t14_hrs is not None:
+    if t14_hrs is not None and np.isfinite(t14_hrs):
         xlim = t14_hrs * 0.7
         mask   = np.abs(phase_hrs)   <= xlim
         mask_d = np.abs(phase_d_hrs) <= xlim
@@ -650,7 +658,7 @@ def _plot_rm(ax_top, ax_bot, d, epoch, params, companion='b',
     resid = d['residuals'] * 1e3
 
     # Dense model now covers full ±T14*0.7 range (extended in save_modelfiles)
-    if t14_hrs is not None:
+    if t14_hrs is not None and np.isfinite(t14_hrs):
         xlim = t14_hrs * 0.7
     else:
         xlim = max(abs(td_hrs.min()), abs(td_hrs.max()))
@@ -854,7 +862,7 @@ def make_summary_plot(
             if param_text:
                 # Place target name + parameters in the right margin
                 text_x = right_margin + 0.02
-                target_name = os.path.basename(os.path.normpath(datadir))
+                target_name = os.path.basename(os.path.realpath(datadir))
                 target_name = target_name.replace('_', ' ')
                 fig.text(text_x, 0.95, target_name,
                          fontsize=20, ha='left', va='top',
