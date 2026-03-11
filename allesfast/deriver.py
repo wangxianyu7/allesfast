@@ -547,7 +547,12 @@ def derive(samples, mode):
         _sc = get_params('A_svsinicoslambda')
         _ss = get_params('A_svsinisinlambda')
         derived_samples['A_vsini']  = _sc**2 + _ss**2
-        derived_samples['A_lambda'] = np.degrees(np.arctan2(_ss, _sc))
+        _lambda_raw = np.degrees(np.arctan2(_ss, _sc))
+        # Unwrap lambda around circular median to avoid ±180° wrapping artifacts
+        _lambda_rad = np.radians(_lambda_raw)
+        _circ_median = np.degrees(np.arctan2(np.median(np.sin(_lambda_rad)),
+                                              np.median(np.cos(_lambda_rad))))
+        derived_samples['A_lambda'] = ((_lambda_raw - _circ_median + 180.) % 360. - 180.) + _circ_median
 
 
     #==========================================================================
