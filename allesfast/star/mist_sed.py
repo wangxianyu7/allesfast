@@ -27,13 +27,14 @@ def _derive_lstar(teff: float, rstar: float) -> float:
 
 
 def mist_chi2(star: 'StellarInputs | list[StellarInputs]',
-              config: Optional[Dict[str, Any]] = None,
-              params: Optional[dict] = None) -> float:
+              config: Optional[Dict[str, Any]] = None) -> float:
     """
     Compute MIST penalty chi2 for one or more stars.
 
     EEP (star.eep, 1-808, continuous) is the primary MIST parameter.
-    Age is derived from the evolutionary track and is NOT a free parameter.
+    Age is derived from the evolutionary track in update_params() and is
+    NOT a free parameter.  Age priors and multi-star coevality are handled
+    in calculate_external_priors().
 
     Parameters
     ----------
@@ -41,9 +42,6 @@ def mist_chi2(star: 'StellarInputs | list[StellarInputs]',
         A single star or a list of stars (e.g. a binary system).
     config : dict, optional
         Configuration options (vvcrit, alpha, allowold, etc.).
-    params : dict, optional
-        If provided, the derived age for each star is stored as
-        params[f'{label}_age'] where label is 'A', 'B', 'C', 'D'.
     """
     cfg = config or {}
     stars = [star] if isinstance(star, StellarInputs) else list(star)
@@ -64,7 +62,6 @@ def mist_chi2(star: 'StellarInputs | list[StellarInputs]',
                 teff=float(s.teff),
                 rstar=float(s.rstar),
                 obsfeh=float(s.feh),
-                age=float(s.age) if s.age is not None else None,
                 vvcrit=cfg.get('vvcrit', None),
                 alpha=cfg.get('alpha', None),
                 allowold=cfg.get('allowold', False),
@@ -72,14 +69,6 @@ def mist_chi2(star: 'StellarInputs | list[StellarInputs]',
             if not np.isfinite(chi2):
                 return np.inf
             total += chi2
-            # store derived age so coupled_tolerance can act on it
-            if params is not None and idx < len(labels):
-                age = get_mistage(
-                    float(s.eep), float(s.mstar), _initfeh,
-                    vvcrit=cfg.get('vvcrit', None),
-                    alpha=cfg.get('alpha', None),
-                )
-                params[f'{labels[idx]}_age'] = age
         except Exception:
             return np.inf
     return total

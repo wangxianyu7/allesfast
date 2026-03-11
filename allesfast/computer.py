@@ -300,6 +300,22 @@ def update_params(theta):
         if params.get(_logm_key) is not None:
             params[_m_key] = 10.0 ** float(params[_logm_key])
 
+    #=========================================================================
+    #::: MIST-derived age: age = f(eep, mstar, initfeh)
+    #=========================================================================
+    if config.BASEMENT.settings.get('use_mist_prior', False):
+        from .star.massradius_mist import get_mistage
+        _vvcrit = config.BASEMENT.settings.get('mist_vvcrit', 0.0)
+        _alpha  = config.BASEMENT.settings.get('mist_alpha', 0.0)
+        for _ltr in 'ABCDEFGHIJKLMNOPQRSTUVWXYZ':
+            _eep     = params.get(f'{_ltr}_eep')
+            _mstar   = params.get(f'{_ltr}_mstar')
+            _initfeh = params.get(f'{_ltr}_initfeh', params.get(f'{_ltr}_feh'))
+            if _eep is not None and _mstar is not None and _initfeh is not None:
+                params[f'{_ltr}_age'] = get_mistage(
+                    float(_eep), float(_mstar), float(_initfeh),
+                    vvcrit=_vvcrit, alpha=_alpha,
+                )
 
     #=========================================================================
     #::: rsuma from Kepler's third law (always derived, never a free parameter)
@@ -1263,13 +1279,21 @@ def calculate_external_priors(params, debug=False):
             if val is not None and ref is not None and np.isfinite(float(val)) and np.isfinite(float(ref)):
                 lnp -= 0.5 * ((float(val) - float(ref)) / tol) ** 2
 
-    #::: Gaussian prior on derived vsini (from sv-parameterization)
-    #    Prior defined by non-fit A_vsini row with 'normal mean std' bounds in params.csv
-    if getattr(config.BASEMENT, 'vsini_prior', None) is not None:
-        _vsini = params.get('A_vsini')
-        if _vsini is not None:
-            _mu, _sigma = config.BASEMENT.vsini_prior
-            lnp += -0.5 * ((_vsini - _mu) / _sigma)**2 - np.log(_sigma * np.sqrt(2*np.pi))
+    #::: priors on derived parameters (age, vsini, etc.)
+    #    Defined in params.csv with fit=1 + normal/trunc_normal bounds;
+    #    basement detects derived params and stores priors in derived_priors.
+    for _dp_key, _dp_val in config.BASEMENT.derived_priors.items():
+        _dp_x = params.get(_dp_key)
+        if _dp_x is not None and np.isfinite(float(_dp_x)):
+            if _dp_val[0] == 'normal':
+                _mu, _sigma = _dp_val[1], _dp_val[2]
+                lnp -= 0.5 * ((float(_dp_x) - _mu) / _sigma) ** 2
+            elif _dp_val[0] == 'trunc_normal':
+                _mu, _sigma, _lo, _hi = _dp_val[1], _dp_val[2], _dp_val[3], _dp_val[4]
+                if _lo <= float(_dp_x) <= _hi:
+                    lnp -= 0.5 * ((float(_dp_x) - _mu) / _sigma) ** 2
+                else:
+                    return -np.inf
 
     #::: midtimes linear-ephemeris prior
     if config.BASEMENT.settings.get('midtimes_file') is not None:
@@ -1353,13 +1377,26 @@ def calculate_external_priors(params, debug=False):
                 'alpha': config.BASEMENT.settings.get('mist_alpha', 0.0),
                 'allowold': config.BASEMENT.settings.get('mist_allowold', False),
             },
-            params=params,
         )
         if np.isfinite(chi2):
             lnp += -0.5 * chi2
         else:
             if debug: print(f'[DEBUG lnprob] -inf from MIST prior: chi2={chi2}')
             return -np.inf
+
+        #::: multi-star age coupling (coevality constraint)
+        #    Penalises |age_B - age_A|, |age_C - age_A|, etc.
+        #    Default tolerance: 0.1 Gyr.
+        _age_tol = float(config.BASEMENT.settings.get('age_couple_tolerance', 0.1))
+        if _age_tol > 0 and config.BASEMENT.nstars >= 2:
+            _ref_age = params.get('A_age')
+            if _ref_age is not None and np.isfinite(float(_ref_age)):
+                for _ltr in 'BCDEFGHIJKLMNOPQRSTUVWXYZ':
+                    _comp_age = params.get(f'{_ltr}_age')
+                    if _comp_age is None:
+                        break
+                    if np.isfinite(float(_comp_age)):
+                        lnp -= 0.5 * ((float(_comp_age) - float(_ref_age)) / _age_tol) ** 2
 
     #::: teffsed / rstarsed soft coupling (EXOFASTv2 style)
     # Penalise SED-specific params departing from their spectroscopic counterparts.

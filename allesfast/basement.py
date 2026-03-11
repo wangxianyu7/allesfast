@@ -1120,6 +1120,45 @@ class Basement():
         self.nstars = 2 if any(k.startswith('B_') for k in self.allkeys) else 1
 
         #==========================================================================
+        #::: derived parameters with optional priors
+        #    Some params are deterministic functions of other free params and must
+        #    not be sampled.  If the user sets fit=1 with normal/trunc_normal
+        #    bounds, we store the prior and force fit=0.
+        #    - *_age  when use_mist_prior=True  (age = f(eep, mstar, initfeh))
+        #    - A_vsini when sv-parameterization is active (vsini = sv_c² + sv_s²)
+        #==========================================================================
+        self.derived_priors = {}
+        self.derived_keys = set()   # all derived param names (with or without prior)
+        _all_names  = np.atleast_1d(buf['name'])
+        _all_fits   = np.atleast_1d(buf['fit'])
+        _all_bounds = np.atleast_1d(buf['bounds'])
+
+        for i, key in enumerate(_all_names):
+            is_derived = False
+            # age is derived from MIST
+            if key.endswith('_age') and self.settings.get('use_mist_prior', False):
+                is_derived = True
+            # vsini is derived from sv-parameterization
+            if key == 'A_vsini' and any(n == 'A_svsinicoslambda' for n in _all_names):
+                is_derived = True
+
+            if is_derived:
+                self.derived_keys.add(key)
+                _bnd = str(_all_bounds[i]).split()
+                if _all_fits[i] == 0 and len(_bnd) >= 2 and _bnd[0] in ('normal', 'trunc_normal'):
+                    raise ValueError(
+                        f"'{key}' is a derived parameter but has fit=0 with "
+                        f"'{_bnd[0]}' bounds.  To add a prior on a derived "
+                        f"parameter, set fit=1 (it will not be sampled)."
+                    )
+                if _all_fits[i] == 1:
+                    if len(_bnd) >= 3 and _bnd[0] == 'normal':
+                        self.derived_priors[key] = ('normal', float(_bnd[1]), float(_bnd[2]))
+                    elif len(_bnd) >= 5 and _bnd[0] == 'trunc_normal':
+                        self.derived_priors[key] = ('trunc_normal', float(_bnd[1]), float(_bnd[2]), float(_bnd[3]), float(_bnd[4]))
+                    buf['fit'][i] = 0
+
+        #==========================================================================
         #::: mark to be fitted params
         #==========================================================================
         self.ind_fit = (buf['fit']==1)                  #len(all rows in params.csv)
@@ -1163,7 +1202,6 @@ class Basement():
 
             'initfeh':      (-5.0, 0.5),        # MIST grid: -5 <= [Fe/H]_0 <= 0.5
             'eep':          (0.0, 1709.0),      # 0 <= EEP <= 1709
-            'age':          (0.0, 13.82),        # age of the universe (Gyr)
             'av':           (0.0, 100.0),        # 0 <= Av <= 100 mag
             'sed_errscale': (0.01, 100.0),       # 0.01 < sigma_SED < 100
         }
@@ -1176,18 +1214,10 @@ class Basement():
                         b[2] = min(b[2], hhi)
 
         #==========================================================================
-        #::: vsini Gaussian prior — read from non-fit A_vsini row with normal bounds
-        #    (used when sampling in sv-space: A_svsinicoslambda / A_svsinisinlambda)
+        #::: parse age_couple_tolerance from settings (multi-star coevality)
         #==========================================================================
-        self.vsini_prior = None
-        _all_names  = np.atleast_1d(buf['name'])
-        _all_fits   = np.atleast_1d(buf['fit'])
-        _all_bounds = np.atleast_1d(buf['bounds'])
-        _vi = np.where((_all_names == 'A_vsini') & (_all_fits == 0))[0]
-        if len(_vi) > 0:
-            _bnd = str(_all_bounds[_vi[0]]).split()
-            if len(_bnd) >= 3 and _bnd[0] == 'normal':
-                self.vsini_prior = (float(_bnd[1]), float(_bnd[2]))
+        if 'age_couple_tolerance' in self.settings:
+            self.settings['age_couple_tolerance'] = float(self.settings['age_couple_tolerance'])
 
 
         #==========================================================================

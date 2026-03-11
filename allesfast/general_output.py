@@ -977,18 +977,18 @@ def save_table(samples, mode):
     with open( os.path.join(config.BASEMENT.outdir,mode+'_table.csv'), 'w' ) as f:
         f.write('#name,median,lower_error,upper_error,label,unit\n')
         f.write('#Fitted parameters,,,\n')
+        _derived_keys = getattr(config.BASEMENT, 'derived_keys', set())
         for i, key in enumerate(config.BASEMENT.allkeys):
-            # A_vsini with fit=0 is a prior placeholder for sv-parameterization;
-            # skip it here since its posterior will appear in the derived table
-            if key == 'A_vsini' and 'A_svsinicoslambda' in config.BASEMENT.fitkeys:
+            # derived params (age, vsini) — skip; posteriors in derived table
+            if key in _derived_keys:
                 continue
             if key not in config.BASEMENT.fitkeys:
                 f.write(key + ',' + str(params[key]) + ',' + '(fixed),(fixed),'+config.BASEMENT.labels[i]+','+config.BASEMENT.units[i]+'\n')
             else:
                 f.write(key + ',' + str(params[key]) + ',' + str(params_ll[key]) + ',' + str(params_ul[key]) + ',' + config.BASEMENT.labels[i] + ',' + config.BASEMENT.units[i] + '\n' )
 
-        
-        
+
+
 ###############################################################################
 #::: save Latex table
 ###############################################################################
@@ -1001,25 +1001,25 @@ def save_latex_table(samples, mode):
     mode : string
         'mcmc' or 'ns'
     '''
-    
+
     params_median, params_ll, params_ul = get_params_from_samples(samples)
-        
+
     with open(os.path.join(config.BASEMENT.outdir,mode+'_latex_table.txt'),'w') as f,\
          open(os.path.join(config.BASEMENT.outdir,mode+'_latex_cmd.txt'),'w') as f_cmd:
-            
+
         f.write('parameter & value & unit & fit/fixed \\\\ \n')
         f.write('\\hline \n')
         f.write('\\multicolumn{4}{c}{\\textit{Fitted parameters}} \\\\ \n')
         f.write('\\hline \n')
-        
+
+        _derived_keys = getattr(config.BASEMENT, 'derived_keys', set())
         for i, key in enumerate(config.BASEMENT.allkeys):
-            # A_vsini with fit=0 is a prior placeholder for sv-parameterization;
-            # skip it here since its posterior will appear in the derived table
-            if key == 'A_vsini' and 'A_svsinicoslambda' in config.BASEMENT.fitkeys:
+            # derived params (age, vsini) — skip; posteriors in derived table
+            if key in _derived_keys:
                 continue
             if key not in config.BASEMENT.fitkeys:
                 value = str(params_median[key])
-                f.write(config.BASEMENT.labels[i] + ' & $' + value + '$ & '  + config.BASEMENT.units[i] + '& fixed \\\\ \n')            
+                f.write(config.BASEMENT.labels[i] + ' & $' + value + '$ & '  + config.BASEMENT.units[i] + '& fixed \\\\ \n')
                 simplename = key.replace("_", "").replace("/", "over").replace("(", "").replace(")", "").replace("1", "one").replace("2", "two").replace("3", "three")
                 comment = config.BASEMENT.labels[i] + '$=' + value + '$ ' + config.BASEMENT.units[i]
                 comment = comment.replace("$$","")

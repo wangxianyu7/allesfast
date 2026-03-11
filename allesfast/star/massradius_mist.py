@@ -358,13 +358,8 @@ def massradius_mist(eep, mstar, feh, teff, rstar, obsfeh=None, age=None, vvcrit=
 
     chi2 = chi2_rstar + chi2_teff + chi2_feh
 
-    # Age chi2 term: always applied when age is provided (mirrors EXOFASTv2 behaviour —
-    # the `if keyword_set(fitage)` guard was commented out in massradius_mist.pro, so it
-    # runs unconditionally).  This is critical for pinning EEP of stars whose Teff/Rstar
-    # are weakly constrained (e.g. a secondary in a binary).
-    if age is not None:
-        chi2_age = ((mistage - age) / (agefloor * mistage if agefloor is not None and agefloor > 0 else percenterror * mistage)) ** 2
-        chi2 += chi2_age
+    # Age is now fully derived from EEP — no chi2_age term.
+    # Age priors and multi-star coevality are handled in calculate_external_priors().
 
     if trackfile:
         _write_track_file(trackfile, teffs, rstars, ages)

@@ -279,7 +279,49 @@ def derive(samples, mode):
         except Exception:
             derived_rsuma[cc] = np.nan
 
+    #==========================================================================
+    #::: MIST-derived age posteriors
+    #==========================================================================
+    derived_age = {}
+    if config.BASEMENT.settings.get('use_mist_prior', False):
+        from .star.massradius_mist import get_mistage
+        _vvcrit = config.BASEMENT.settings.get('mist_vvcrit', 0.0)
+        _alpha  = config.BASEMENT.settings.get('mist_alpha', 0.0)
+        for _ltr in 'ABCDEFGHIJKLMNOPQRSTUVWXYZ':
+            _eep_key    = f'{_ltr}_eep'
+            _age_key    = f'{_ltr}_age'
+            _eep_samples = get_params(_eep_key)
+            if np.isscalar(_eep_samples) and np.isnan(_eep_samples):
+                continue
+            # mstar: from logmstar (fitted) or mstar (fixed)
+            _logm_key = f'{_ltr}_logmstar'
+            _logm_samples = get_params(_logm_key)
+            if np.isscalar(_logm_samples) and np.isnan(_logm_samples):
+                _mstar_samples = get_params(f'{_ltr}_mstar')
+                if np.isscalar(_mstar_samples) and np.isnan(_mstar_samples):
+                    continue
+            else:
+                _mstar_samples = 10.0 ** np.atleast_1d(_logm_samples)
+            # initfeh or feh
+            _initfeh_samples = get_params(f'{_ltr}_initfeh')
+            if np.isscalar(_initfeh_samples) and np.isnan(_initfeh_samples):
+                _initfeh_samples = get_params(f'{_ltr}_feh')
+                if np.isscalar(_initfeh_samples) and np.isnan(_initfeh_samples):
+                    continue
+            _eep_arr     = np.atleast_1d(_eep_samples)
+            _mstar_arr   = np.atleast_1d(_mstar_samples)
+            _initfeh_arr = np.atleast_1d(_initfeh_samples)
+            _age_arr = np.array([
+                get_mistage(float(_eep_arr[j % len(_eep_arr)]),
+                            float(_mstar_arr[j % len(_mstar_arr)]),
+                            float(_initfeh_arr[j % len(_initfeh_arr)]),
+                            vvcrit=_vvcrit, alpha=_alpha)
+                for j in range(N_samples)
+            ])
+            derived_age[_age_key] = _age_arr
+
     derived_samples = {}
+    derived_samples.update(derived_age)
     for cc in companions:
         companion = cc
 
