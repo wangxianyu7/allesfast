@@ -22,7 +22,7 @@ import matplotlib.pyplot as plt
 import os, sys
 from datetime import datetime
 import emcee
-import corner
+import arviz as az
 import multiprocessing
 multiprocessing.set_start_method('fork', force=True)
 #solves python>=3.8 issues, see https://stackoverflow.com/questions/60518386/error-with-module-multiprocessing-under-python3-8
@@ -314,10 +314,21 @@ def estimate_jitter(x,y,white_noise,
     plt.close(fig)
  
         
-    #::: plot corner
-    fig = corner.corner(samples,
-                        labels=names,
-                        show_titles=True, title_kwargs={"fontsize": 12});
+    #::: plot corner (arviz hexbin)
+    var_dict = {name: samples[np.newaxis, :, i] for i, name in enumerate(names)}
+    idata = az.from_dict(posterior=var_dict)
+    ndim_plot = len(names)
+    az.rcParams['plot.max_subplots'] = max(ndim_plot ** 2 + 1, 40)
+    axs = az.plot_pair(
+        idata,
+        kind='hexbin',
+        marginals=True,
+        gridsize=30,
+        hexbin_kwargs={'cmap': 'Blues'},
+        marginal_kwargs={'color': '#1f77b4'},
+        point_estimate='median',
+    )
+    fig = axs.ravel()[0].get_figure() if hasattr(axs, 'ravel') else plt.gcf()
     fig.savefig( os.path.join(outdir,fname+'mcmc_corner.jpg'), dpi=100, bbox_inches='tight')
     plt.close(fig)
 

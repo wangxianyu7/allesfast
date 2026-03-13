@@ -9,16 +9,24 @@ description = "Allesfitter x EXOFASTv2"
 readme = "README.md"
 requires-python = ">=3.8"
 dependencies = [
-    "numpy",
-    "scipy",
-    "matplotlib",
-    "astropy",
-    "seaborn",
+    "numpy>=2.2.6",
+    "scipy>=1.15.3",
+    "matplotlib>=3.10.8",
+    "astropy>=6.1.7",
+    "seaborn>=0.13.2",
     "emcee>=3.1.6",
-    "dynesty",
-    "pytransit",
-    "radvel",
-    "celerite",
+    "dynesty>=2.1.4",
+    "pytransit>=2.6.11",
+    "radvel>=1.5.6",
+    "celerite>=0.4.3",
+    "arviz>=0.20.0",
+    "numba>=0.61.2",
+    "pandas>=2.2.3",
+    "tqdm>=4.67.0",
+    "h5py>=3.12.1",
+    "requests>=2.32.5",
+    "statsmodels>=0.14.4",
+    "astroquery>=0.4.11",
 ]
 
 [tool.setuptools.packages.find]
