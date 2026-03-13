@@ -1109,6 +1109,22 @@ def save_modelfiles(samples, prefix):
             baseline_dense    = calculate_baseline(params_median, inst, key, xx=xx)
             stellar_var_dense = calculate_stellar_var(params_median, 'all', key, xx=xx)
 
+            # Compute 1-sigma band from posterior samples (up to 300 for speed)
+            model_dense_p16 = model_dense
+            model_dense_p84 = model_dense
+            try:
+                _nsamp = min(len(samples), 300)
+                _idx   = np.random.choice(len(samples), _nsamp, replace=False)
+                _models = []
+                for _s in samples[_idx]:
+                    _p = get_params_from_samples(_s[np.newaxis, :])[0]
+                    _models.append(calculate_model(_p, inst, key, xx=xx))
+                _models = np.array(_models)
+                model_dense_p16 = np.percentile(_models, 16, axis=0)
+                model_dense_p84 = np.percentile(_models, 84, axis=0)
+            except Exception:
+                pass
+
             fname = os.path.join(modeldir, f'{prefix}_{inst}.npz')
             np.savez(fname,
                      time=time, data=data, err=err_w,
@@ -1116,7 +1132,9 @@ def save_modelfiles(samples, prefix):
                      stellar_var=stellar_var, total=total, residuals=residuals,
                      time_dense=xx, model_dense=model_dense,
                      baseline_dense=baseline_dense,
-                     stellar_var_dense=stellar_var_dense)
+                     stellar_var_dense=stellar_var_dense,
+                     model_dense_p16=model_dense_p16,
+                     model_dense_p84=model_dense_p84)
             logprint(f"  Saved modelfile: {fname}")
         except Exception as e:
             logprint(f"  WARNING: save_modelfiles failed for {inst} – {e}")

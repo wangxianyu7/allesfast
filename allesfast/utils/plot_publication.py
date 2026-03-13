@@ -81,6 +81,70 @@ def _standardise_inst_name(name, time=None):
     return name
 
 
+def _short_inst_label(name, time=None, is_rv=False):
+    """Extract a short display label like 'Kepler 60s' from instrument name.
+
+    Strips date prefixes and '.Tran' / '.RV' suffixes, then applies rename
+    rules or regex parsing to produce a clean telescope + cadence string.
+
+    For RV / RM instruments (*is_rv=True*), cadence is never appended.
+    """
+    import re
+
+    # Remove date prefix (nYYYYMMDD.) and .Tran / .RV suffixes
+    clean = re.sub(r'^n\d{8}\.', '', name)
+    clean = re.sub(r'\.(Tran|RV)$', '', clean)
+    # e.g. 'Kepler.Kepler60', 'TESS.TESS120', 'TESS.200QLP', 'HIRES', 'HDS_RM'
+
+    parts = clean.split('.')
+    config = parts[-1] if len(parts) > 1 else parts[0]
+
+    # RV / RM instruments: strip _RM suffix and trailing index tags
+    # e.g. 'SOPHIE0RM1_RM' -> 'SOPHIE0RM1' -> 'SOPHIE'
+    if is_rv:
+        base = config.split('_')[0]
+        # Strip trailing digit+letter combos like '0RM1', '0RV2'
+        base = re.sub(r'\d+[A-Za-z]+\d*$', '', base)
+        return base if base else config.split('_')[0]
+
+    # Apply rename rules to the config part
+    for old, new in _INST_RENAME:
+        if old == config:
+            return new
+    # QLP / SPOC pipeline suffix, e.g. '200QLP'
+    m = re.match(r'^(\d+)(QLP|SPOC)$', config)
+    if m:
+        telescope = parts[0] if len(parts) > 1 else ''
+        return f'{telescope} {m.group(2)} {m.group(1)}s'.strip()
+    # Telescope + cadence, e.g. 'Kepler60'
+    m = re.match(r'^([A-Za-z]\w*?)(\d+)$', config)
+    if m:
+        return f'{m.group(1)} {m.group(2)}s'
+    # Fallback: compute cadence from data
+    if time is not None and len(time) > 1:
+        raw = np.median(np.diff(np.sort(time))) * 86400
+        cadence = min(_ALLOWED_CADENCES, key=lambda c: abs(c - raw))
+        return f'{config} {cadence}s'
+    return config
+
+
+def _base_telescope(inst_name):
+    """Extract the base telescope name from a full instrument name.
+
+    Strips date prefix, .RV/.Tran suffix, and _RM suffix so that e.g.
+    'n20070824.HIRES.RV' and 'n20100724.HIRES_RM.RV' both yield 'HIRES'.
+    """
+    import re
+    clean = re.sub(r'^n\d{8}\.', '', inst_name)
+    clean = re.sub(r'\.(Tran|RV)$', '', clean)
+    parts = clean.split('.')
+    config = parts[-1] if len(parts) > 1 else parts[0]
+    base = config.split('_')[0]
+    # Strip trailing digit+letter combos like '0RM1', '0RV2'
+    base = re.sub(r'\d+[A-Za-z]+\d*$', '', base)
+    return base if base else config.split('_')[0]
+
+
 # ---------------------------------------------------------------------------
 # I/O helpers
 # ---------------------------------------------------------------------------
@@ -441,6 +505,114 @@ def _symmetrise_residual_ylim(ax):
 
 
 # ---------------------------------------------------------------------------
+# Posterior-sample model computation
+# ---------------------------------------------------------------------------
+def _compute_posterior_models(datadir, Nsamples, phot_insts, rv_insts,
+                              rm_insts, period, epoch, companion, t14_hrs,
+                              params):
+    """Draw posterior samples and compute model curves for each instrument.
+
+    For each panel type, computes percentile bands (16th, 50th, 84th) from
+    the posterior samples, matching the approach in plot_mcmc.ipynb.
+
+    Returns dict with percentile arrays for each instrument/panel.
+    """
+    from .. import config
+    from ..computer import update_params, rv_fct, flux_fct
+    from ..mcmc.mcmc_output import get_mcmc_posterior_samples
+
+    samples = get_mcmc_posterior_samples(datadir, Nsamples=Nsamples,
+                                         as_type='2d_array')
+    # samples is 2D array (Nsamples, ndim)
+
+    result = {}
+
+    # --- Transit (phase-folded) ---
+    for inst in phot_insts:
+        if t14_hrs is not None and np.isfinite(t14_hrs):
+            half_win = t14_hrs * 0.7 / 24. / period  # in phase units
+        else:
+            half_win = 0.05
+        phase_grid = np.linspace(-half_win, half_win, 500)
+        xx = epoch + phase_grid * period  # real times
+        models = []
+        for s in samples:
+            p = update_params(s)
+            model = flux_fct(p, inst, companion, xx=xx)
+            models.append(model)
+        models = np.array(models)
+        p16, p50, p84 = np.percentile(models, (16, 50, 84), axis=0)
+        result[inst] = {
+            'phase_hrs': phase_grid * period * 24.,
+            'p16': p16, 'p50': p50, 'p84': p84,
+        }
+
+    # --- RV (phase-folded) ---
+    if rv_insts:
+        phase_grid = np.linspace(-0.5, 0.5, 500)
+        xx = epoch + phase_grid * period
+        inst0 = rv_insts[0]
+        models = []
+        for s in samples:
+            p = update_params(s)
+            model = rv_fct(p, inst0, companion, xx=xx)[0]
+            models.append(model * 1e3)  # km/s → m/s
+        models = np.array(models)
+        p16, p50, p84 = np.percentile(models, (16, 50, 84), axis=0)
+        result['_rv_combined'] = {
+            'phase': phase_grid,
+            'p16': p16, 'p50': p50, 'p84': p84,
+        }
+
+    # --- RM (time-series around transit) ---
+    for inst in rm_insts:
+        t_data = config.BASEMENT.data[inst]['time']
+        mid_time = (float(t_data.min()) + float(t_data.max())) / 2.0
+        n_tr = round((mid_time - epoch) / period)
+        local_epoch = epoch + n_tr * period
+        if t14_hrs is not None and np.isfinite(t14_hrs):
+            half_win = t14_hrs * 0.7 / 24.
+        else:
+            half_win = (t_data.max() - t_data.min()) / 2.
+        xx = np.linspace(local_epoch - half_win, local_epoch + half_win, 500)
+        models = []
+        for s in samples:
+            p = update_params(s)
+            # Full RV for this companion (Keplerian + RM)
+            full_rv = rv_fct(p, inst, companion, xx=xx)[0]
+            # Subtract per-sample Keplerian to isolate RM anomaly
+            kep = _compute_keplerian_from_params(xx, p, companion)
+            rm_signal = (full_rv - kep) * 1e3  # km/s → m/s
+            models.append(rm_signal)
+        models = np.array(models)
+        p16, p50, p84 = np.percentile(models, (16, 50, 84), axis=0)
+        t_hrs = (xx - local_epoch) * 24.
+        result[inst] = {
+            't_hrs': t_hrs,
+            'p16': p16, 'p50': p50, 'p84': p84,
+        }
+
+    return result
+
+
+def _compute_keplerian_from_params(time, p, companion='b'):
+    """Compute Keplerian RV from a per-sample parameter dict (km/s)."""
+    from radvel.kepler import rv_drive
+    from radvel.orbit import timetrans_to_timeperi
+
+    per = p[companion + '_period']
+    tc  = p[companion + '_epoch']
+    f_c = p.get(companion + '_f_c', 0.0)
+    f_s = p.get(companion + '_f_s', 0.0)
+    K   = p.get(companion + '_K', 0.0)
+
+    e = f_c**2 + f_s**2
+    w = np.arctan2(f_s, f_c)
+    tp = timetrans_to_timeperi(tc, per, e, w)
+    return rv_drive(time, np.array([per, tp, e, w, K * 1e3])) / 1e3  # km/s
+
+
+# ---------------------------------------------------------------------------
 # Panel plotters
 # ---------------------------------------------------------------------------
 def _plot_sed(ax_top, ax_bot, d):
@@ -480,12 +652,18 @@ def _plot_sed(ax_top, ax_bot, d):
         log_obs = np.log10(obs[i])
         y_lo = (np.log10(obs[i] - err[i]) if obs[i] > err[i] else log_obs - 0.5)
         y_hi = np.log10(obs[i] + err[i])
-        ax_top.plot([weff[i], weff[i]], [y_lo, y_hi], '-', color='crimson', lw=1.5, zorder=2)
-        ax_top.plot([weff[i] - widtheff[i] / 2, weff[i] + widtheff[i] / 2],
-                    [log_obs, log_obs], '-', color='crimson', lw=1.5, zorder=2)
+        # ax_top.plot([weff[i], weff[i]], [y_lo, y_hi], '-', color='crimson', lw=1.5, zorder=2)
+        ax_top.errorbar(weff[i], log_obs, yerr=[[log_obs - y_lo], [y_hi - log_obs]], fmt='o',
+                        markeredgecolor='black', ecolor='k',
+                        capsize=3, capthick=1, 
+                        color='crimson')
+        ax_top.errorbar(weff[i], log_obs, xerr=widtheff[i] / 2, fmt='none',
+                        markeredgecolor='black', ecolor='k',
+                        capsize=3, capthick=1, 
+                        color='crimson')
     safe_obs = np.where(obs > 0, obs, np.nan)
-    ax_top.plot(weff, np.log10(safe_obs), 'o', color='crimson', ms=5, zorder=4,
-                label='Observed')
+    ax_top.scatter(weff, np.log10(safe_obs), marker='o', edgecolor='k', facecolor='crimson', s=35,
+               zorder=4, label='Observed')
 
     ax_top.set_xscale('log')
     ax_top.set_xlim(0.3, 30)
@@ -502,11 +680,16 @@ def _plot_sed(ax_top, ax_bot, d):
 
     # Residuals
     for i in range(len(weff)):
-        ax_bot.plot([weff[i] - widtheff[i] / 2, weff[i] + widtheff[i] / 2],
-                    [resid[i], resid[i]], '-', color='crimson', lw=1.5)
-        ax_bot.plot([weff[i], weff[i]],
-                    [resid[i] - 1, resid[i] + 1], '-', color='crimson', lw=1.5)
-    ax_bot.plot(weff, resid, 'o', color='crimson', ms=5)
+        # ax_bot.plot([weff[i] - widtheff[i] / 2, weff[i] + widtheff[i] / 2],
+        #             [resid[i], resid[i]], '-', color='crimson', lw=1.5)
+        # ax_bot.plot([weff[i], weff[i]],
+        #             [resid[i] - 1, resid[i] + 1], '-', color='crimson', lw=1.5)
+        ax_bot.errorbar(weff[i], resid[i], xerr=widtheff[i] / 2, yerr=1, fmt='none',
+                        ecolor='k', capsize=3, capthick=1)
+        ax_bot.errorbar(weff[i], resid[i], yerr=1, fmt='o', color='k', ms=5, zorder=2)
+        
+    # ax_bot.plot(weff, resid, 'o', color='crimson', ms=5)
+    ax_bot.scatter(weff, resid, marker='o', edgecolor='k', facecolor='crimson', s=35, zorder=3)
     ax_bot.axhline(0, ls='--', color='crimson', lw=0.8)
     ax_bot.set_xscale('log')
     ax_bot.set_xlim(0.3, 30)
@@ -516,9 +699,10 @@ def _plot_sed(ax_top, ax_bot, d):
 
 
 def _plot_transit(ax_top, ax_bot, d, period, epoch, t14_hrs=None,
-                  inst_label=None, bin_minutes=None, transit_index=0):
+                  inst_label=None, bin_minutes=None, transit_index=0,
+                  posterior_curves=None):
     if inst_label:
-        inst_label = _standardise_inst_name(inst_label, time=d['time'])
+        short_label = _short_inst_label(inst_label, time=d['time'])
     # Phase-fold all transit epochs
     phase     = _phase_fold(d['time'], period, epoch)
     phase_hrs = phase * period * 24.  # convert phase to hours from T0
@@ -558,17 +742,32 @@ def _plot_transit(ax_top, ax_bot, d, period, epoch, t14_hrs=None,
     t_res, r_plot, re_plot  = _bin_data(phase_hrs[idx_data], resid[idx_data],
                                         yerr[idx_data], bin_minutes)
 
-    mk  = _TRANSIT_MARKERS[transit_index % len(_TRANSIT_MARKERS)]
-    clr = _TRANSIT_COLORS[transit_index % len(_TRANSIT_COLORS)]
-    ax_top.scatter(t_plot, y_plot, marker=mk, color=clr, s=20,
-                   zorder=1, label=inst_label)
-    ax_top.plot(phase_d_hrs[idx_d], model_dense[idx_d], color='firebrick',
-                lw=2, zorder=2)
+    ax_top.scatter(t_plot, y_plot, marker='.', color='grey', s=20,
+                   alpha=0.5, zorder=1)
+    if posterior_curves is not None:
+        xx = posterior_curves['phase_hrs']
+        ax_top.plot(xx, posterior_curves['p50'], color='firebrick',
+                    lw=2, ls='--', zorder=2)
+        ax_top.fill_between(xx, posterior_curves['p16'],
+                            posterior_curves['p84'],
+                            color='k', alpha=0.1, zorder=2)
+    else:
+        ax_top.plot(phase_d_hrs[idx_d], model_dense[idx_d], color='firebrick',
+                    lw=2, zorder=2)
+        p16 = d.get('model_dense_p16', None)
+        p84 = d.get('model_dense_p84', None)
+        if p16 is not None and p84 is not None:
+            p16_m = np.asarray(p16)[mask_d][idx_d]
+            p84_m = np.asarray(p84)[mask_d][idx_d]
+            ax_top.fill_between(phase_d_hrs[idx_d], p16_m, p84_m,
+                                color='k', alpha=0.1, zorder=1)
     ax_top.set_ylabel('Relative Flux', fontsize=20, fontweight='bold')
     if inst_label:
-        ax_top.legend(loc='upper right', frameon=False, fontsize=15, prop={'weight': 'bold'})
+        ax_top.text(0.5, 0.97, short_label, transform=ax_top.transAxes,
+                    ha='center', va='top', fontsize=15, fontweight='bold')
 
-    ax_bot.scatter(t_res, r_plot * 1e3, marker=mk, color=clr, s=20)
+    ax_bot.scatter(t_res, r_plot * 1e3, marker='.', color='grey', s=20,
+                   alpha=0.5)
     ax_bot.axhline(0, ls='--', color='red', lw=0.8)
     ax_bot.set_xlabel(r'Time $-$ $T_0$ (hrs)', fontsize=20, fontweight='bold')
     ax_bot.set_ylabel('Res (ppt)', fontsize=20, fontweight='bold')
@@ -578,14 +777,18 @@ def _plot_transit(ax_top, ax_bot, d, period, epoch, t14_hrs=None,
         ax_top.set_xlim(-xlim, xlim)
 
 
-def _plot_rv_phased(ax_top, ax_bot, modelfiles_dict, rv_insts, period, epoch):
+def _plot_rv_phased(ax_top, ax_bot, modelfiles_dict, rv_insts, period, epoch,
+                    posterior_curves=None, get_marker=None):
     dense_done = False
     for i, inst in enumerate(rv_insts):
         if inst not in modelfiles_dict:
             continue
         d     = modelfiles_dict[inst]
-        mk    = _MARKERS[i % len(_MARKERS)]
-        ms    = _RV_MARKERSIZES[i % len(_RV_MARKERSIZES)]
+        if get_marker is not None:
+            mk, ms = get_marker(inst)
+        else:
+            mk = _MARKERS[i % len(_MARKERS)]
+            ms = _RV_MARKERSIZES[i % len(_RV_MARKERSIZES)]
 
         ph    = _phase_fold(d['time'].copy(), period, epoch)
         y     = (d['data'] - d['baseline'] - d['stellar_var']) * 1e3   # km/s → m/s
@@ -594,23 +797,43 @@ def _plot_rv_phased(ax_top, ax_bot, modelfiles_dict, rv_insts, period, epoch):
 
         ax_top.errorbar(ph, y, yerr=yerr, fmt=mk, markerfacecolor='white',
                         markeredgecolor='black', ecolor='k',
-                        capsize=3, capthick=1, ms=ms, zorder=2, label=inst)
+                        capsize=3, capthick=1, ms=ms, zorder=2,
+                        label=_short_inst_label(inst, time=d['time'], is_rv=True))
         ax_bot.errorbar(ph, resid, yerr=yerr, fmt=mk, markerfacecolor='white',
                         markeredgecolor='black', ecolor='k',
                         capsize=3, capthick=1, ms=ms, zorder=2)
 
         if not dense_done:
-            ph_d  = _phase_fold(d['time_dense'].copy(), period, epoch)
-            mod_d = d['model_dense'] * 1e3
-            idx   = np.argsort(ph_d)
-            ax_top.plot(ph_d[idx],     mod_d[idx], color='firebrick', lw=2, zorder=3)
-            ax_top.plot(ph_d[idx] + 1, mod_d[idx], color='firebrick', lw=2, zorder=3)
-            ax_top.plot(ph_d[idx] - 1, mod_d[idx], color='firebrick', lw=2, zorder=3)
+            if posterior_curves is not None:
+                ph_c = posterior_curves['phase']
+                p50 = posterior_curves['p50']
+                p16 = posterior_curves['p16']
+                p84 = posterior_curves['p84']
+                for offset in [0, 1, -1]:
+                    ax_top.plot(ph_c + offset, p50, color='firebrick',
+                                lw=2, ls='--', zorder=3)
+                    ax_top.fill_between(ph_c + offset, p16, p84,
+                                        color='k', alpha=0.1, zorder=3)
+            else:
+                ph_d  = _phase_fold(d['time_dense'].copy(), period, epoch)
+                mod_d = d['model_dense'] * 1e3
+                idx   = np.argsort(ph_d)
+                ax_top.plot(ph_d[idx],     mod_d[idx], color='firebrick', lw=2, zorder=3)
+                ax_top.plot(ph_d[idx] + 1, mod_d[idx], color='firebrick', lw=2, zorder=3)
+                ax_top.plot(ph_d[idx] - 1, mod_d[idx], color='firebrick', lw=2, zorder=3)
+                p16 = d.get('model_dense_p16', None)
+                p84 = d.get('model_dense_p84', None)
+                if p16 is not None and p84 is not None:
+                    p16_m = np.asarray(p16) * 1e3
+                    p84_m = np.asarray(p84) * 1e3
+                    for offset in [0, 1, -1]:
+                        ax_top.fill_between(ph_d[idx] + offset, p16_m[idx], p84_m[idx],
+                                            color='k', alpha=0.1, zorder=2)
             dense_done = True
 
     ax_top.set_xlim(-0.6, 0.6)
     ax_top.set_ylabel('RV (m/s)', fontsize=20, fontweight='bold')
-    ax_top.legend(loc='upper right', frameon=False, fontsize=15, prop={'weight': 'bold'})
+    # Legend is drawn as a shared figlegend; skip per-panel legend here.
 
     ax_bot.axhline(0, ls='--', color='red', lw=0.8)
     ax_bot.set_xlabel(r'Phase $+\,(T_p-T_0)/P$', fontsize=20, fontweight='bold')
@@ -636,7 +859,9 @@ def _compute_keplerian(time, params, companion='b'):
 
 
 def _plot_rm(ax_top, ax_bot, d, epoch, params, companion='b',
-             t14_hrs=None, inst_label=None):
+             t14_hrs=None, inst_label=None, color=None,
+             marker='o', markersize=7,
+             posterior_curves=None):
     # Use the nearest transit epoch to the observed data so that t=0 is
     # centred on the transit even when the data are from a later epoch.
     period = params.get(f'{companion}_period', 1.0)
@@ -663,17 +888,36 @@ def _plot_rm(ax_top, ax_bot, d, epoch, params, companion='b',
     else:
         xlim = max(abs(td_hrs.min()), abs(td_hrs.max()))
 
-    ax_top.errorbar(t_hrs, y, yerr=yerr, fmt='o', markerfacecolor='white',
-                    markeredgecolor='black', ecolor='k',
-                    capsize=3, capthick=1, ms=7, zorder=2, label=inst_label)
-    ax_top.plot(td_hrs, mod_d, color='firebrick', lw=2, zorder=3)
-    ax_top.set_ylabel('RM (m/s)', fontsize=20, fontweight='bold')
-    if inst_label:
-        ax_top.legend(loc='upper right', frameon=False, fontsize=15, prop={'weight': 'bold'})
+    mfc = 'white'
+    mec = 'black' if color is None else color
+    ec  = 'k'     if color is None else color
 
-    ax_bot.errorbar(t_hrs, resid, yerr=yerr, fmt='o', markerfacecolor='white',
-                    markeredgecolor='black', ecolor='k',
-                    capsize=3, capthick=1, ms=7)
+    ax_top.errorbar(t_hrs, y, yerr=yerr, fmt=marker, markerfacecolor=mfc,
+                    markeredgecolor=mec, ecolor=ec,
+                    capsize=3, capthick=1, ms=markersize, zorder=2,
+                    label=_short_inst_label(inst_label, time=d['time'], is_rv=True) if inst_label else None)
+    if posterior_curves is not None:
+        xx = posterior_curves['t_hrs']
+        ax_top.plot(xx, posterior_curves['p50'], color='firebrick',
+                    lw=2, ls='--', zorder=3)
+        ax_top.fill_between(xx, posterior_curves['p16'],
+                            posterior_curves['p84'],
+                            color='k', alpha=0.1, zorder=3)
+    else:
+        ax_top.plot(td_hrs, mod_d, color='firebrick', lw=2, zorder=3)
+        p16 = d.get('model_dense_p16', None)
+        p84 = d.get('model_dense_p84', None)
+        if p16 is not None and p84 is not None:
+            p16_rm = (np.asarray(p16) - kep_dense) * 1e3
+            p84_rm = (np.asarray(p84) - kep_dense) * 1e3
+            ax_top.fill_between(td_hrs, p16_rm, p84_rm,
+                                color='k', alpha=0.1, zorder=2)
+    ax_top.set_ylabel('RM (m/s)', fontsize=20, fontweight='bold')
+    # Legend is drawn as a shared figlegend; skip per-panel legend here.
+
+    ax_bot.errorbar(t_hrs, resid, yerr=yerr, fmt=marker, markerfacecolor=mfc,
+                    markeredgecolor=mec, ecolor=ec,
+                    capsize=3, capthick=1, ms=markersize)
     ax_bot.axhline(0, ls='--', color='red', lw=0.8)
     ax_bot.set_xlabel(r'Time $-$ $T_0$ (hrs)', fontsize=20, fontweight='bold')
     ax_bot.set_ylabel('Res (m/s)', fontsize=20, fontweight='bold')
@@ -696,6 +940,9 @@ def make_summary_plot(
     outfile=None,
     figsize_per_panel=(6, 5),
     show_params=True,
+    combine_rm=False,
+    Nsamples=None,
+    system_name=None,
 ):
     """
     Generate a publication-quality summary figure from allesfast modelfiles.
@@ -723,6 +970,16 @@ def make_summary_plot(
     show_params : bool
         If True (default), annotate the figure with key fitted parameters
         (Teff, M*, R*, P, Rp/R*, K, e, lambda, vsini) and their uncertainties.
+    combine_rm : bool
+        If True, plot all RM instruments in a single panel instead of one
+        panel per instrument.
+    Nsamples : int or None
+        If set, draw this many posterior samples from the MCMC chain and
+        overlay translucent model curves (like mcmc_fit_b.pdf). Only works
+        when prefix='mcmc'. None = use single model from npz files.
+    system_name : str or None
+        Display name for the target system (e.g. 'HAT-P-7'). If None,
+        the name is derived from the datadir folder name.
 
     Returns
     -------
@@ -759,6 +1016,26 @@ def make_summary_plot(
     if rm_insts is None:
         rm_insts = [i for i in s_rv if i in rm_set and _avail(i)]
 
+    # Build a global telescope → (marker, markersize) map so the same
+    # telescope always gets the same marker across RV and RM panels.
+    _seen_bases = {}
+    _next_idx = [0]
+
+    def _get_marker(inst):
+        base = _base_telescope(inst)
+        if base not in _seen_bases:
+            idx = _next_idx[0]
+            _seen_bases[base] = (_MARKERS[idx % len(_MARKERS)],
+                                 _RV_MARKERSIZES[idx % len(_RV_MARKERSIZES)])
+            _next_idx[0] += 1
+        return _seen_bases[base]
+
+    # Register all RV instruments first, then RM, to fix the order
+    for inst in rv_insts:
+        _get_marker(inst)
+    for inst in rm_insts:
+        _get_marker(inst)
+
     has_sed = os.path.exists(os.path.join(modeldir, f'{prefix}_sed.npz'))
     has_rv  = bool(rv_insts)
 
@@ -767,8 +1044,11 @@ def make_summary_plot(
     panels.append(('sed', None) if has_sed else ('empty', 'No SED data'))
     panels.append(('rv', rv_insts) if has_rv else ('empty', 'No RV data'))
     if rm_insts:
-        for inst in rm_insts:
-            panels.append(('rm', inst))
+        if combine_rm:
+            panels.append(('rm_combined', rm_insts))
+        else:
+            for inst in rm_insts:
+                panels.append(('rm', inst))
     else:
         panels.append(('empty', 'No RM data'))
     for inst in phot_insts:
@@ -779,11 +1059,21 @@ def make_summary_plot(
     for ptype, pval in panels:
         if ptype == 'sed':
             mf['sed'] = _load(os.path.join(modeldir, f'{prefix}_sed.npz'))
+        elif ptype == 'rm_combined':
+            for inst in pval:
+                mf[inst] = _load(os.path.join(modeldir, f'{prefix}_{inst}.npz'))
         elif ptype in ('phot', 'rm'):
             mf[pval] = _load(os.path.join(modeldir, f'{prefix}_{pval}.npz'))
         elif ptype == 'rv':
             for inst in pval:
                 mf[inst] = _load(os.path.join(modeldir, f'{prefix}_{inst}.npz'))
+
+    # Compute posterior sample models if requested
+    post = {}
+    if Nsamples is not None and Nsamples > 0 and prefix == 'mcmc':
+        post = _compute_posterior_models(datadir, Nsamples, phot_insts,
+                                         rv_insts, rm_insts, period, epoch,
+                                         companion, t14_hrs, params)
 
     ncols = 3
     n     = len(panels)
@@ -800,6 +1090,7 @@ def make_summary_plot(
     transit_axes_top = []
     transit_axes_bot = []
     transit_count = 0
+    rv_rm_axes_top = []          # collect RV / RM top axes for figlegend
 
     for i, (ptype, pval) in enumerate(panels):
         row, col = divmod(i, ncols)
@@ -816,16 +1107,32 @@ def make_summary_plot(
             _plot_transit(ax_top, ax_bot, mf[pval], period, epoch,
                           t14_hrs=t14_hrs, inst_label=pval,
                           bin_minutes=bin_phot_minutes,
-                          transit_index=transit_count)
+                          transit_index=transit_count,
+                          posterior_curves=post.get(pval))
             transit_count += 1
             transit_axes_top.append(ax_top)
             transit_axes_bot.append(ax_bot)
         elif ptype == 'rv':
-            _plot_rv_phased(ax_top, ax_bot, mf, pval, period, epoch)
+            _plot_rv_phased(ax_top, ax_bot, mf, pval, period, epoch,
+                            posterior_curves=post.get('_rv_combined'),
+                            get_marker=_get_marker)
+            rv_rm_axes_top.append(ax_top)
         elif ptype == 'rm':
+            mk, ms = _get_marker(pval)
             _plot_rm(ax_top, ax_bot, mf[pval], epoch, params,
                      companion=companion, t14_hrs=t14_hrs,
-                     inst_label=pval)
+                     inst_label=pval, marker=mk, markersize=ms,
+                     posterior_curves=post.get(pval))
+            rv_rm_axes_top.append(ax_top)
+        elif ptype == 'rm_combined':
+            for j, inst in enumerate(pval):
+                mk, ms = _get_marker(inst)
+                _plot_rm(ax_top, ax_bot, mf[inst], epoch, params,
+                         companion=companion, t14_hrs=t14_hrs,
+                         inst_label=inst,
+                         marker=mk, markersize=ms,
+                         posterior_curves=post.get(inst))
+            rv_rm_axes_top.append(ax_top)
         elif ptype == 'empty':
             ax_top.text(0.5, 0.5, pval, transform=ax_top.transAxes,
                         ha='center', va='center', fontsize=10, color='gray')
@@ -852,6 +1159,27 @@ def make_summary_plot(
         for ax in transit_axes_top:
             ax.set_ylim(shared_top)
 
+    # Shared figlegend for RV / RM instruments at the top of the figure
+    if rv_rm_axes_top:
+        from matplotlib.lines import Line2D
+        seen_labels = set()
+        unique_handles, unique_labels = [], []
+        for ax in rv_rm_axes_top:
+            handles, labels = ax.get_legend_handles_labels()
+            for h, l in zip(handles, labels):
+                if l not in seen_labels:
+                    seen_labels.add(l)
+                    unique_handles.append(h)
+                    unique_labels.append(l)
+        if unique_labels:
+            ncol_leg = min(len(unique_labels), 8)
+            label_y = 1.03 if len(unique_labels) <= 8 else 1.07
+            fig.legend(unique_handles, unique_labels,
+                       loc='upper center',
+                       bbox_to_anchor=(0.5, label_y),
+                       ncol=ncol_leg, frameon=False,
+                       fontsize=15, prop={'weight': 'bold'})
+
     # Add parameter annotation text
     if show_params:
         params_we = _read_params_with_errors(datadir, mode=prefix)
@@ -862,13 +1190,16 @@ def make_summary_plot(
             if param_text:
                 # Place target name + parameters in the right margin
                 text_x = right_margin + 0.02
-                target_name = os.path.basename(os.path.realpath(datadir))
-                target_name = target_name.replace('_', ' ')
+                if system_name is not None:
+                    target_name = system_name
+                else:
+                    target_name = os.path.basename(os.path.realpath(datadir))
+                    target_name = target_name.replace('_', ' ')
                 fig.text(text_x, 0.95, target_name,
                          fontsize=20, ha='left', va='top',
                          fontweight='bold',
                          transform=fig.transFigure)
-                fig.text(text_x, 0.88, param_text,
+                fig.text(text_x, 0.92, param_text,
                          fontsize=16, ha='left', va='top',
                          transform=fig.transFigure,
                          linespacing=1.6)
@@ -898,9 +1229,15 @@ if __name__ == '__main__':
     p.add_argument('--outfile', default=None)
     p.add_argument('--no-params', action='store_true', default=False,
                    help='Do not show parameter annotations on the figure')
+    p.add_argument('--combine-rm', action='store_true', default=False,
+                   help='Combine all RM instruments into one panel')
+    p.add_argument('--Nsamples', type=int, default=None,
+                   help='Number of posterior samples to overlay (mcmc only)')
     args = p.parse_args()
     make_summary_plot(args.datadir, prefix=args.prefix,
                       companion=args.companion,
                       bin_phot_minutes=args.bin_phot_minutes,
                       outfile=args.outfile,
-                      show_params=not args.no_params)
+                      show_params=not args.no_params,
+                      combine_rm=args.combine_rm,
+                      Nsamples=args.Nsamples)
