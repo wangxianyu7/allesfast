@@ -739,6 +739,13 @@ def derive(samples, mode):
         names.append( 'A_distance' )
         labels.append( r'Distance; $d$ (pc)' )
 
+    #::: MIST-derived age (one entry per star letter that has an age posterior)
+    for _ltr in 'ABCDEFGHIJKLMNOPQRSTUVWXYZ':
+        _age_key = f'{_ltr}_age'
+        if _age_key in derived_samples:
+            names.append(_age_key)
+            labels.append(r'Stellar age; $\tau_{' + _ltr + r'}$ (Gyr)')
+
 
     ###############################################################################
     #::: delete pointless values

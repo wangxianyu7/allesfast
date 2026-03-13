@@ -27,7 +27,7 @@ def _derive_lstar(teff: float, rstar: float) -> float:
 
 
 def mist_chi2(star: 'StellarInputs | list[StellarInputs]',
-              config: Optional[Dict[str, Any]] = None) -> float:
+              config: Optional[Dict[str, Any]] = None):
     """
     Compute MIST penalty chi2 for one or more stars.
 
@@ -42,20 +42,29 @@ def mist_chi2(star: 'StellarInputs | list[StellarInputs]',
         A single star or a list of stars (e.g. a binary system).
     config : dict, optional
         Configuration options (vvcrit, alpha, allowold, etc.).
+
+    Returns
+    -------
+    chi2 : float
+        Total MIST chi2 penalty across all stars.
+    ln_ageweight : float
+        Sum of ln(ageweight) across all stars, used to correct the
+        uniform EEP prior to a uniform Age prior (EXOFASTv2 convention).
     """
     cfg = config or {}
     stars = [star] if isinstance(star, StellarInputs) else list(star)
     labels = ['A', 'B', 'C', 'D']
     total = 0.0
+    total_ln_ageweight = 0.0
     for idx, s in enumerate(stars):
         if any(v is None for v in [s.eep, s.mstar, s.feh, s.teff, s.rstar]):
-            return np.inf
+            return np.inf, 0.0
         # Use initfeh (initial birth metallicity) as MIST track input if available;
         # otherwise fall back to feh (spectroscopic). EXOFASTv2 style: initfeh drives
         # track interpolation, feh is the observed surface value compared to mistfeh.
         _initfeh = float(s.initfeh) if s.initfeh is not None else float(s.feh)
         try:
-            chi2 = massradius_mist(
+            chi2, ageweight = massradius_mist(
                 eep=float(s.eep),
                 mstar=float(s.mstar),
                 feh=_initfeh,
@@ -67,11 +76,13 @@ def mist_chi2(star: 'StellarInputs | list[StellarInputs]',
                 allowold=cfg.get('allowold', False),
             )
             if not np.isfinite(chi2):
-                return np.inf
+                return np.inf, 0.0
             total += chi2
+            if ageweight > 0:
+                total_ln_ageweight += np.log(ageweight)
         except Exception:
-            return np.inf
-    return total
+            return np.inf, 0.0
+    return total, total_ln_ageweight
 
 
 def sed_chi2(

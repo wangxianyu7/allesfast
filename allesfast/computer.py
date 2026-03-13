@@ -1369,7 +1369,7 @@ def calculate_external_priors(params, debug=False):
         ))
 
     if config.BASEMENT.settings.get('use_mist_prior', False):
-        chi2 = mist_chi2(
+        chi2, ln_ageweight = mist_chi2(
             stars,
             config={
                 'mist_root': config.BASEMENT.settings.get('mist_root', None),
@@ -1380,6 +1380,12 @@ def calculate_external_priors(params, debug=False):
         )
         if np.isfinite(chi2):
             lnp += -0.5 * chi2
+            # Jacobian correction: transform uniform EEP prior → uniform Age prior.
+            # ageweight = d(EEP)/d(Age).  EXOFASTv2 uses acceptance ratio
+            # C = olddet/newdet * exp(...), so π ∝ 1/det = 1/ageweight.
+            # In log-posterior: subtract ln(ageweight) to down-weight regions
+            # where many EEP steps map to little age (e.g. pre-main-sequence).
+            lnp -= ln_ageweight
         else:
             if debug: print(f'[DEBUG lnprob] -inf from MIST prior: chi2={chi2}')
             return -np.inf

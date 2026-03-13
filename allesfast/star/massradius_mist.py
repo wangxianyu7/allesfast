@@ -283,12 +283,12 @@ def massradius_mist(eep, mstar, feh, teff, rstar, obsfeh=None, age=None, vvcrit=
     if not (ALLOWED_MASS.min() <= mstar <= ALLOWED_MASS.max()):
         if verbose:
             print(f"Mstar ({mstar}) is out of range [0.1, 300]", file=logname or None)
-        return np.inf
+        return np.inf, 0.0
 
     if not (ALLOWED_INITFEH.min() <= feh <= ALLOWED_INITFEH.max()):
         if verbose:
             print(f"initfeh ({feh}) is out of range [-4, 0.5]", file=logname or None)
-        return np.inf
+        return np.inf, 0.0
 
     try:
         mass_lo, mass_frac = _mass_bracket(mstar)
@@ -298,7 +298,7 @@ def massradius_mist(eep, mstar, feh, teff, rstar, obsfeh=None, age=None, vvcrit=
     except ValueError as exc:
         if verbose:
             print(str(exc), file=logname or None)
-        return np.inf
+        return np.inf, 0.0
 
     # EEP is 1-indexed and continuous; convert to 0-based bracket indices.
     eep_lo  = int(np.floor(eep)) - 1   # 0-based lower bracket
@@ -308,26 +308,27 @@ def massradius_mist(eep, mstar, feh, teff, rstar, obsfeh=None, age=None, vvcrit=
     if eep_lo < 0:
         if verbose:
             print(f"EEP ({eep}) is below minimum (1)", file=logname or None)
-        return np.inf
+        return np.inf, 0.0
 
     # Bilinear interpolation over the 4 corner tracks (mass_lo/hi × feh_lo/hi).
     # For each corner: EEP-interpolate, then bilinearly combine.
     corner_vals = {}
     for di in (0, 1):
         for dj in (0, 1):
-            ages_c, rstars_c, teffs_c, fehs_c, _ = _get_track_tuple_cached(
+            ages_c, rstars_c, teffs_c, fehs_c, ageweights_c = _get_track_tuple_cached(
                 mass_lo + di, feh_lo + dj, vvcritndx, alphandx
             )
             if eep_hi >= len(ages_c):
                 if verbose:
                     print(f"EEP ({eep}) out of bounds for corner ({di},{dj}), neep={len(ages_c)}",
                           file=logname or None)
-                return np.inf
+                return np.inf, 0.0
             corner_vals[(di, dj)] = {
-                'age':   (1 - eep_frac) * ages_c[eep_lo]   + eep_frac * ages_c[eep_hi],
-                'rstar': (1 - eep_frac) * rstars_c[eep_lo] + eep_frac * rstars_c[eep_hi],
-                'teff':  (1 - eep_frac) * teffs_c[eep_lo]  + eep_frac * teffs_c[eep_hi],
-                'feh':   (1 - eep_frac) * fehs_c[eep_lo]   + eep_frac * fehs_c[eep_hi],
+                'age':       (1 - eep_frac) * ages_c[eep_lo]       + eep_frac * ages_c[eep_hi],
+                'rstar':     (1 - eep_frac) * rstars_c[eep_lo]     + eep_frac * rstars_c[eep_hi],
+                'teff':      (1 - eep_frac) * teffs_c[eep_lo]      + eep_frac * teffs_c[eep_hi],
+                'feh':       (1 - eep_frac) * fehs_c[eep_lo]       + eep_frac * fehs_c[eep_hi],
+                'ageweight': (1 - eep_frac) * ageweights_c[eep_lo] + eep_frac * ageweights_c[eep_hi],
             }
 
     def _bilinear(key):
@@ -335,15 +336,16 @@ def massradius_mist(eep, mstar, feh, teff, rstar, obsfeh=None, age=None, vvcrit=
         v1 = (1 - mass_frac) * corner_vals[(0, 1)][key] + mass_frac * corner_vals[(1, 1)][key]
         return (1 - feh_frac) * v0 + feh_frac * v1
 
-    mistage   = _bilinear('age')
-    mistrstar = _bilinear('rstar')
-    mistteff  = _bilinear('teff')
-    mistfeh   = _bilinear('feh')
+    mistage      = _bilinear('age')
+    mistrstar    = _bilinear('rstar')
+    mistteff     = _bilinear('teff')
+    mistfeh      = _bilinear('feh')
+    mistageweight = _bilinear('ageweight')
 
     if mistage < 0 or (not allowold and mistage > 13.82):
         if verbose:
             print(f"Derived age ({mistage:.3f} Gyr) is out of range", file=logname or None)
-        return np.inf
+        return np.inf, 0.0
 
     percenterror = 0.03 - 0.025 * np.log10(mstar) + 0.045 * (np.log10(mstar))**2
 
@@ -392,7 +394,7 @@ def massradius_mist(eep, mstar, feh, teff, rstar, obsfeh=None, age=None, vvcrit=
                 )
         except (ValueError, IndexError):
             pass
-    return chi2
+    return chi2, mistageweight
 
 
 def _write_track_file(path, teffs, rstars, ages):
