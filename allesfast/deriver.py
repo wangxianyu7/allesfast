@@ -542,7 +542,9 @@ def derive(samples, mode):
 
     #==========================================================================
     #::: sv-parameterization: derive vsini and lambda per sample
+    #::: Supports per-companion (e.g. b_svsinicoslambda) with fallback to global A_svsinicoslambda
     #==========================================================================
+    # Global (legacy) sv-parameterization
     if ('A_svsinicoslambda' in config.BASEMENT.fitkeys) and ('A_svsinisinlambda' in config.BASEMENT.fitkeys):
         _sc = get_params('A_svsinicoslambda')
         _ss = get_params('A_svsinisinlambda')
@@ -553,6 +555,19 @@ def derive(samples, mode):
         _circ_median = np.degrees(np.arctan2(np.median(np.sin(_lambda_rad)),
                                               np.median(np.cos(_lambda_rad))))
         derived_samples['A_lambda'] = ((_lambda_raw - _circ_median + 180.) % 360. - 180.) + _circ_median
+    # Per-companion sv-parameterization (e.g. b_svsinicoslambda → A_vsini + b_lambda)
+    for companion in config.BASEMENT.settings['companions_all']:
+        _comp_sc_key = companion + '_svsinicoslambda'
+        _comp_ss_key = companion + '_svsinisinlambda'
+        if (_comp_sc_key in config.BASEMENT.fitkeys) and (_comp_ss_key in config.BASEMENT.fitkeys):
+            _sc = get_params(_comp_sc_key)
+            _ss = get_params(_comp_ss_key)
+            derived_samples['A_vsini']  = _sc**2 + _ss**2
+            _lambda_raw = np.degrees(np.arctan2(_ss, _sc))
+            _lambda_rad = np.radians(_lambda_raw)
+            _circ_median = np.degrees(np.arctan2(np.median(np.sin(_lambda_rad)),
+                                                  np.median(np.cos(_lambda_rad))))
+            derived_samples[companion + '_lambda'] = ((_lambda_raw - _circ_median + 180.) % 360. - 180.) + _circ_median
 
 
     #==========================================================================
@@ -726,6 +741,11 @@ def derive(samples, mode):
     if 'A_lambda' in derived_samples:
         names.append( 'A_lambda' )
         labels.append( r'Spin-orbit angle; $\lambda$ (deg)' )
+    for companion in config.BASEMENT.settings['companions_all']:
+        _comp_lam_key = companion + '_lambda'
+        if _comp_lam_key in derived_samples:
+            names.append( _comp_lam_key )
+            labels.append( r'Spin-orbit angle ' + companion + r'; $\lambda_\mathrm{' + companion + r'}$ (deg)' )
 
     if 'A_mstar' in derived_samples:
         names.append( 'A_mstar' )

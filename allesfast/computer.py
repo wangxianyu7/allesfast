@@ -279,16 +279,27 @@ def update_params(theta):
         
        
     #=========================================================================
-    #::: sv-parameterization: A_svsinicoslambda / A_svsinisinlambda → A_vsini / A_lambda
+    #::: sv-parameterization: svsinicoslambda / svsinisinlambda → A_vsini / lambda
     #::: mirrors EXOFASTv2: sv_c = sqrt(vsini)*cos(lam), sv_s = sqrt(vsini)*sin(lam)
     #::: → vsini = sv_c² + sv_s²   (always ≥ 0)
     #::: → lambda = atan2(sv_s, sv_c)  (well-defined for vsini > 0)
+    #::: Supports per-companion (e.g. b_svsinicoslambda) with fallback to A_svsinicoslambda
     #=========================================================================
+    # Global (legacy) sv-parameterization: A_svsinicoslambda → A_vsini / A_lambda
     if params.get('A_svsinicoslambda') is not None:
         _sc = params['A_svsinicoslambda']
         _ss = params['A_svsinisinlambda']
         params['A_vsini']  = _sc**2 + _ss**2
         params['A_lambda'] = np.degrees(np.arctan2(_ss, _sc))
+    # Per-companion sv-parameterization: b_svsinicoslambda → A_vsini / b_lambda
+    for companion in config.BASEMENT.settings['companions_all']:
+        _comp_sc_key = companion + '_svsinicoslambda'
+        _comp_ss_key = companion + '_svsinisinlambda'
+        if params.get(_comp_sc_key) is not None:
+            _sc = params[_comp_sc_key]
+            _ss = params[_comp_ss_key]
+            params['A_vsini']  = _sc**2 + _ss**2
+            params[companion + '_lambda'] = np.degrees(np.arctan2(_ss, _sc))
 
     #=========================================================================
     #::: logmstar → mstar (EXOFASTv2 style)
@@ -925,7 +936,7 @@ def flux_fct_piecewise(params, inst, companion, xx=None, settings=None):
                                   bfac_2 =      params[companion+'_bfac_'+inst], 
                                   heat_1 =      divide(params['A_heat_'+inst],2.),
                                   heat_2 =      divide(params[companion+'_heat_'+inst],2.),
-                                  lambda_1 =    params['A_lambda'], 
+                                  lambda_1 =    params.get(companion+'_lambda') if params.get(companion+'_lambda') is not None else params['A_lambda'], 
                                   lambda_2 =    params[companion+'_lambda'], 
                                   vsini_1 =     params['A_vsini'],
                                   vsini_2 =     params[companion+'_vsini'], 
@@ -1003,7 +1014,7 @@ def flux_subfct_ellc_phase_curve_hack(params, inst, companion, xx, t_exp, n_int)
                       bfac_2 =      0, 
                       heat_1 =      0,
                       heat_2 =      0,
-                      lambda_1 =    params['A_lambda'], 
+                      lambda_1 =    params.get(companion+'_lambda') if params.get(companion+'_lambda') is not None else params['A_lambda'], 
                       lambda_2 =    params[companion+'_lambda'], 
                       vsini_1 =     params['A_vsini'],
                       vsini_2 =     params[companion+'_vsini'], 
@@ -1049,7 +1060,7 @@ def flux_subfct_ellc_phase_curve_hack(params, inst, companion, xx, t_exp, n_int)
                       bfac_2 =      0, 
                       heat_1 =      0,
                       heat_2 =      0.1,
-                      lambda_1 =    params['A_lambda'], 
+                      lambda_1 =    params.get(companion+'_lambda') if params.get(companion+'_lambda') is not None else params['A_lambda'], 
                       lambda_2 =    params[companion+'_lambda'], 
                       vsini_1 =     params['A_vsini'],
                       vsini_2 =     params[companion+'_vsini'], 
@@ -1095,7 +1106,7 @@ def flux_subfct_ellc_phase_curve_hack(params, inst, companion, xx, t_exp, n_int)
                       bfac_2 =      0, 
                       heat_1 =      0,
                       heat_2 =      0.1,
-                      lambda_1 =    params['A_lambda'], 
+                      lambda_1 =    params.get(companion+'_lambda') if params.get(companion+'_lambda') is not None else params['A_lambda'], 
                       lambda_2 =    params[companion+'_lambda'], 
                       vsini_1 =     params['A_vsini'],
                       vsini_2 =     params[companion+'_vsini'], 
@@ -1197,7 +1208,8 @@ def rv_fct(params, inst, companion, xx=None, settings=None):
             period = params[companion+'_period']
             t0 = params[companion+'_epoch']
             inc = params[companion+'_incl']
-            lambda_r = params['A_lambda']
+            # Per-companion lambda with fallback to global A_lambda (backward compat)
+            lambda_r = params.get(companion+'_lambda') if params.get(companion+'_lambda') is not None else params['A_lambda']
             vsini = params['A_vsini']
             # xi (vmic) and zeta (vmac): use fitted value if present in params,
             # otherwise derive from empirical relations (Bruntt2010/GES, Doyle2014/GES)

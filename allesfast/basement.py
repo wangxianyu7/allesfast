@@ -963,6 +963,9 @@ class Basement():
                 validate('A_vsini', None, -np.inf, np.inf)
                 validate('A_svsinicoslambda', None, -np.inf, np.inf)
                 validate('A_svsinisinlambda', None, -np.inf, np.inf)
+                # Per-companion sv-parameterization (e.g. b_svsinicoslambda)
+                validate(companion+'_svsinicoslambda', None, -np.inf, np.inf)
+                validate(companion+'_svsinisinlambda', None, -np.inf, np.inf)
                 
                 validate(companion+'_gdc_'+inst, None, 0., 1.)
                 validate(companion+'_rotfac_'+inst, 1., 0., np.inf)
@@ -1138,8 +1141,8 @@ class Basement():
             # age is derived from MIST
             if key.endswith('_age') and self.settings.get('use_mist_prior', False):
                 is_derived = True
-            # vsini is derived from sv-parameterization
-            if key == 'A_vsini' and any(n == 'A_svsinicoslambda' for n in _all_names):
+            # vsini is derived from sv-parameterization (global or per-companion)
+            if key == 'A_vsini' and any(n in ('A_svsinicoslambda',) or n.endswith('_svsinicoslambda') for n in _all_names):
                 is_derived = True
 
             if is_derived:
