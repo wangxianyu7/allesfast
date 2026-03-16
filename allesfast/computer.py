@@ -1201,15 +1201,36 @@ def rv_fct(params, inst, companion, xx=None, settings=None):
         _fw = config.BASEMENT.settings[companion+'_flux_weighted_'+inst]
         _rm_resolution = _fw if isinstance(_fw, float) and _fw > 1.0 else None
         if _fw:
-            # print(inst,'RM com')
+            # Per-companion lambda with fallback to global A_lambda (backward compat)
+            lambda_r = params.get(companion+'_lambda')
+            if lambda_r is None:
+                lambda_r = params.get('A_lambda')
+            # Validate: RM requires lambda and transit geometry params.
+            if lambda_r is None:
+                raise ValueError(
+                    f"RM enabled for companion '{companion}' on instrument "
+                    f"'{inst}' (flux_weighted={_fw}), but no spin-orbit angle "
+                    f"found. Define '{companion}_svsinicoslambda' and "
+                    f"'{companion}_svsinisinlambda' (or 'A_svsinicoslambda' "
+                    f"for a global angle) in params.csv."
+                )
+            _missing_rm = [k for k in ('_rr', '_cosi', '_rsuma')
+                           if params.get(companion + k) is None]
+            if _missing_rm:
+                missing_names = ', '.join(companion + k for k in _missing_rm)
+                raise ValueError(
+                    f"RM enabled for companion '{companion}' on instrument "
+                    f"'{inst}' (flux_weighted={_fw}), but transit geometry "
+                    f"parameters are missing: {missing_names}. "
+                    f"Add these to params.csv or move flux_weighted to the "
+                    f"correct companion."
+                )
             time = xx[in_transit_mask]
             rr = params[companion+'_rr']
             ar = (1+rr) / params[companion+'_rsuma']
             period = params[companion+'_period']
             t0 = params[companion+'_epoch']
             inc = params[companion+'_incl']
-            # Per-companion lambda with fallback to global A_lambda (backward compat)
-            lambda_r = params.get(companion+'_lambda') if params.get(companion+'_lambda') is not None else params['A_lambda']
             vsini = params['A_vsini']
             # xi (vmic) and zeta (vmac): use fitted value if present in params,
             # otherwise derive from empirical relations (Bruntt2010/GES, Doyle2014/GES)
@@ -1234,30 +1255,22 @@ def rv_fct(params, inst, companion, xx=None, settings=None):
             u1 = 2*np.sqrt(q1)*q2; u2 = np.sqrt(q1)*(1-2*q2)
             teff_val = _teff_rm
             if len(time) == 0:
-                # print('Warning: no data points inside transit window for', inst, 'with parameters:', rr, ar, period, t0, inc, lambda_r, vsini, zi, zeta, ecc, omega, q1, q2, u1, u2)
                 pass  # no data inside transit window, rm stays zero
             elif np.isnan(rr*ar*period*t0*inc*lambda_r*vsini*zi*zeta*ecc*omega*q1*q2*u1*u2):
                 rm[in_transit_mask] = np.nan
             else:
-                # try:
                 if t_exp != None:
                     bjdtime = time
                     ninterp = n_int
                     exptime = t_exp*24*60
                     npoints = len(bjdtime)
-                    # Compute the time offsets
                     time_offsets = (np.arange(ninterp) / ninterp - (ninterp - 1.0) / (2.0 * ninterp)) / 1440.0 * exptime
                     transitbjd = bjdtime[:, None] + time_offsets
-                    # Single vectorised call: pass all npoints*ninterp times at once,
-                    # then reshape and average — avoids recomputing M̃(σ) per exposure.
                     all_rm = get_rm_hirano2011(transitbjd.ravel(), rr, ar, period, t0, inc, ecc, omega, lambda_r, vsini, zi, zeta, u1, u2, teff=teff_val, inst=inst, resolution=_rm_resolution)
                     rm[in_transit_mask] = all_rm.reshape(npoints, ninterp).mean(axis=1)
                 else:
                     rm[in_transit_mask] = get_rm_hirano2011(time, rr, ar, period, t0, inc, ecc, omega, lambda_r, vsini, zi, zeta, u1, u2, teff=teff_val, inst=inst, resolution=_rm_resolution)
-                # except:
-                #     rm[in_transit_mask] = np.nan
             if np.isnan(np.mean(rm)):
-                # print('RM calculation failed for', inst, 'with parameters:', rr, ar, period, t0, inc, lambda_r, vsini, zi, zeta, ecc, omega, q1, q2, u1, u2)
                 rm = np.zeros_like(rm)
             model_rv1 = model_rv1+rm
     else:
