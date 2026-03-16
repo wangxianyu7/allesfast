@@ -132,11 +132,12 @@ _UNIT = {
 }
 
 
-def _make_row(name, value, bounds_str, label='', unit=''):
+def _make_row(name, value, bounds_str, label='', unit='', fitted=True):
     """Return a formatted params.csv line (no trailing newline)."""
     # Use fixed notation for large values (e.g. BJD epochs)
     val_str = f'{value:.6f}' if abs(value) >= 1000 else f'{value:.6g}'
-    return f'{name},{val_str},1,{bounds_str},{label},{unit}'
+    fit_flag = 1 if fitted else 0
+    return f'{name},{val_str},{fit_flag},{bounds_str},{label},{unit}'
 
 
 def priors_to_params(priorfile, companion='b',
@@ -216,16 +217,23 @@ def priors_to_params(priorfile, companion='b',
         sigma = e['sigma']
         lo    = e['lo']
         hi    = e['hi']
-        if sigma is not None and sigma < 0 and lo is not None and hi is not None:
+        if sigma is not None and sigma == 0:
+            # AV fixed (e.g. Bayestar says AV=0 with no uncertainty)
+            bounds = f'fixed {val:.6g} {val:.6g}'
+            rows.append(_make_row('A_av', val, bounds, _LABEL['A_av'], _UNIT['A_av'],
+                                  fitted=False))
+        elif sigma is not None and sigma < 0 and lo is not None and hi is not None:
             bounds = f'uniform {lo:.6g} {hi:.6g}'
+            rows.append(_make_row('A_av', val, bounds, _LABEL['A_av'], _UNIT['A_av']))
         elif sigma is not None and sigma > 0:
             if lo is not None and hi is not None:
                 bounds = f'trunc_normal {val:.6g} {sigma:.6g} {lo:.6g} {hi:.6g}'
             else:
                 bounds = f'normal {val:.6g} {sigma:.6g}'
+            rows.append(_make_row('A_av', val, bounds, _LABEL['A_av'], _UNIT['A_av']))
         else:
             bounds = 'uniform 0 1'
-        rows.append(_make_row('A_av', val, bounds, _LABEL['A_av'], _UNIT['A_av']))
+            rows.append(_make_row('A_av', val, bounds, _LABEL['A_av'], _UNIT['A_av']))
 
     # -----------------------------------------------------------------------
     # age: stellar age in Gyr — free parameter, wide uniform if not in file

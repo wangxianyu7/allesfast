@@ -1118,9 +1118,14 @@ class Basement():
 
 
         #==========================================================================
-        #::: detect number of stars from presence of B_* parameters
+        #::: detect number of stars from presence of B_, C_, D_, … parameters
         #==========================================================================
-        self.nstars = 2 if any(k.startswith('B_') for k in self.allkeys) else 1
+        self.nstars = 1
+        for _ltr in 'BCDEFGHIJKLMNOPQRSTUVWXYZ':
+            if any(k.startswith(f'{_ltr}_') for k in self.allkeys):
+                self.nstars += 1
+            else:
+                break
 
         #==========================================================================
         #::: derived parameters with optional priors
