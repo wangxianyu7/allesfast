@@ -555,21 +555,18 @@ def flux_fct_full(params, inst, companion, xx=None, settings=None):
     if settings is None: 
         settings = config.BASEMENT.settings
         
-    if xx is None: 
+    if xx is None:
         xx = config.BASEMENT.data[inst]['time']
-        t_exp = settings['t_exp_'+inst]
-        n_int = settings['t_exp_n_int_'+inst]
-    else:
-        t_exp = None
-        n_int = None
-    
-    
-    #-------------------------------------------------------------------------- 
-    #::: flux sub-fct: ellc lightcurve 
-    # for eclipses, transits, occultations, 
+    t_exp = settings['t_exp_'+inst]
+    n_int = settings['t_exp_n_int_'+inst]
+
+
+    #--------------------------------------------------------------------------
+    #::: flux sub-fct: ellc lightcurve
+    # for eclipses, transits, occultations,
     # spots, rotation,
     # and physical phase curve models; but no phase shift and no thermal vs reflected
-    #-------------------------------------------------------------------------- 
+    #--------------------------------------------------------------------------
     model_flux, model_flux1, model_flux2 = flux_subfct_ellc(params, inst, companion, xx=xx, settings=settings, t_exp=t_exp, n_int=n_int, return_fluxes=True)
         
         
@@ -679,10 +676,13 @@ def flux_subfct_ellc(params, inst, companion, xx=None, settings=None, t_exp=None
             _tm = _tm_models[inst]
         else:
             _tm = RoadRunnerModel('quadratic')
-            if np.sum(cadence) == 0 or len(cadence) != len(xx):
-                _tm.set_data(xx)
-            else:
+            if len(cadence) == len(xx) and np.sum(cadence) > 0:
                 _tm.set_data(xx, lcids=lcids, nsamples=nsamples, exptimes=exptimes)
+            elif t_exp is not None and n_int is not None and n_int > 1:
+                _lcids = np.zeros(len(xx), dtype=int)
+                _tm.set_data(xx, lcids=_lcids, nsamples=[n_int], exptimes=[t_exp])
+            else:
+                _tm.set_data(xx)
 
         model_flux1 = _tm.evaluate(k, ldc, t0, p, a, i, e, w)
         model_flux2 = np.zeros_like(xx)
@@ -877,14 +877,12 @@ def flux_fct_piecewise(params, inst, companion, xx=None, settings=None):
     if settings is None:
         settings = config.BASEMENT.settings
         
+    t_exp = settings['t_exp_'+inst]
+    n_int = settings['t_exp_n_int_'+inst]
     if xx is None:
-        t_exp = settings['t_exp_'+inst]
-        n_int = settings['t_exp_n_int_'+inst]
-        model_flux = np.ones_like(config.BASEMENT.data[inst]['time']) #* np.nan               
+        model_flux = np.ones_like(config.BASEMENT.data[inst]['time']) #* np.nan
     else:
-        t_exp = None
-        n_int = None
-        model_flux = np.ones_like(xx) #* np.nan     
+        model_flux = np.ones_like(xx) #* np.nan
     
     
     #-------------------------------------------------------------------------- 
@@ -1157,11 +1155,8 @@ def rv_fct(params, inst, companion, xx=None, settings=None):
     '''
     if xx is None:
         xx    = config.BASEMENT.data[inst]['time']
-        t_exp = config.BASEMENT.settings['t_exp_'+inst]
-        n_int = config.BASEMENT.settings['t_exp_n_int_'+inst]
-    else:
-        t_exp = None
-        n_int = None
+    t_exp = config.BASEMENT.settings['t_exp_'+inst]
+    n_int = config.BASEMENT.settings['t_exp_n_int_'+inst]
     
     if (params[companion+'_K'] is not None) and (params[companion+'_K'] > 0):
         # print(inst,'RV com')

@@ -279,7 +279,8 @@ class DEMCPTSampler:
     """
 
     def __init__(self, log_posterior, ndim, nchains=None, ntemps=1, Tf=200.0,
-                 stretch=False, maxgr=1.01, mintz=1000, seed=None):
+                 stretch=False, maxgr=1.01, mintz=1000, seed=None,
+                 adapt_temps=False, adapt_halflife=1000):
         self.logpost_func = log_posterior
         self.ndim = ndim
         self.nchains = nchains or max(2 * ndim, 3)
@@ -295,6 +296,10 @@ class DEMCPTSampler:
         else:
             self.betas = np.array([1.0])
 
+        # adaptive temperature ladder (SAR method, cf. reddemcee)
+        self.adapt_temps = adapt_temps and ntemps > 1
+        self.adapt_halflife = adapt_halflife
+
         self.gamma = 2.38 / np.sqrt(2.0 * ndim)
         self.a_stretch = 2.0
 
@@ -304,6 +309,56 @@ class DEMCPTSampler:
         self._pos_full = None     # (nchains, ntemps, ndim)
         self._logp_full = None    # (nchains, ntemps)
         self._acceptance_rate = np.nan
+        self._betas_history = None  # (nsteps,ntemps) if adapt_temps
+
+    # ----- adaptive temperature ladder (SAR) --------------------------------
+
+    def _adapt_betas(self, swap_accept_rates, iteration):
+        """Adjust betas to equalise swap acceptance rates between neighbours.
+
+        Uses the SAR (Swap Acceptance Rate) method following reddemcee
+        (Vousden et al. 2016; Peña Rojas 2024).  Works in temperature
+        space (T = 1/beta): multiplicatively adjusts the temperature
+        gaps so that pairs with lower swap rates get pushed closer
+        together.  The adjustment decays as
+        halflife / (iteration + halflife) so the ladder stabilises.
+
+        Parameters
+        ----------
+        swap_accept_rates : ndarray (ntemps-1,)
+            Running swap acceptance rate for each adjacent pair.
+        iteration : int
+            Current MCMC step (controls decay).
+        """
+        ntemps = self.ntemps
+        if ntemps < 3:
+            return  # need at least 3 temps to adjust interior betas
+
+        kappa = self.adapt_halflife / (iteration + self.adapt_halflife)
+
+        # SAR adjustment: equalise swap acceptance rates
+        dS = -np.diff(swap_accept_rates)  # (ntemps-2,)
+        dS[np.abs(dS) < 1e-8] = 0.0
+
+        # Work in temperature space (T = 1/beta), following reddemcee
+        betas = self.betas.copy()
+        Ts = 1.0 / betas[:-1]          # exclude hottest (infinite T OK)
+        deltaTs = np.diff(Ts)           # (ntemps-2,) gaps between temps
+
+        # Multiplicative adjustment on gaps (same as reddemcee PTMove.adapt)
+        deltaTs *= np.exp(kappa * dS)
+
+        # Reconstruct interior betas from adjusted gaps
+        new_Ts = np.cumsum(deltaTs) + Ts[0]  # Ts[0] = 1/betas[0] = 1
+        betas[1:-1] = 1.0 / new_Ts
+
+        # Safety: ensure monotone decreasing and positive
+        for k in range(1, ntemps - 1):
+            betas[k] = min(betas[k], betas[k - 1] * 0.999)
+            betas[k] = max(betas[k], betas[k + 1] * 1.001)
+
+        betas[0] = 1.0  # pin cold chain
+        self.betas = betas
 
     # ----- proposal helpers --------------------------------------------------
 
@@ -469,6 +524,13 @@ class DEMCPTSampler:
         final_step = nsteps
         last_saved = None
 
+        # per-pair swap tracking for adaptive temps
+        if self.adapt_temps:
+            pair_swap = np.zeros(ntemps - 1)
+            pair_attempt = np.zeros(ntemps - 1)
+            betas_history = np.empty((nsteps, ntemps))
+            betas_history[0] = self.betas.copy()
+
         if progress:
             workers_s = f" ({nworkers} workers)" if use_pool else ""
             print(f"Running MCMC{workers_s} ...")
@@ -483,10 +545,14 @@ class DEMCPTSampler:
                             for j in range(nchains):
                                 if rng.random() < 0.5:
                                     nswap_attempt += 1
+                                    if self.adapt_temps:
+                                        pair_attempt[m] += 1
                                     log_alpha = ((betas[m] - betas[m + 1])
                                                  * (logp[j, m + 1] - logp[j, m]))
                                     if np.log(rng.random()) < log_alpha:
                                         nswap += 1
+                                        if self.adapt_temps:
+                                            pair_swap[m] += 1
                                         pos[j, m], pos[j, m + 1] = (
                                             pos[j, m + 1].copy(), pos[j, m].copy())
                                         logp[j, m], logp[j, m + 1] = (
@@ -517,6 +583,15 @@ class DEMCPTSampler:
 
                     chain[i] = pos[:, 0]
                     log_prob[i] = logp[:, 0]
+
+                # --- adaptive temperature ladder ---
+                if self.adapt_temps:
+                    safe = pair_attempt > 0
+                    rates = np.zeros(ntemps - 1)
+                    rates[safe] = pair_swap[safe] / pair_attempt[safe]
+                    self._adapt_betas(rates, i)
+                    betas = self.betas  # update local ref
+                    betas_history[i] = betas.copy()
 
                 if save_every > 0 and (i + 1) % save_every == 0:
                     self._chain = chain[:i + 1]
@@ -590,6 +665,8 @@ class DEMCPTSampler:
         self._pos_full = pos
         self._logp_full = logp
         self._acceptance_rate = naccept / max(nattempt, 1)
+        if self.adapt_temps:
+            self._betas_history = betas_history[:final_step]
         return converged
 
     def _run_continue(self, nsteps, nthin=1, scale=None, progress=True,
@@ -643,6 +720,16 @@ class DEMCPTSampler:
         final_step = total_steps
         last_saved = None
 
+        # per-pair swap tracking for adaptive temps
+        if self.adapt_temps:
+            pair_swap = np.zeros(ntemps - 1)
+            pair_attempt = np.zeros(ntemps - 1)
+            betas_history = np.empty((nsteps, ntemps))
+            if self._betas_history is not None:
+                betas_history[:old_steps] = self._betas_history[:old_steps]
+            else:
+                betas_history[:old_steps] = self.betas[None, :]
+
         if progress:
             workers_s = f" ({nworkers} workers)" if use_pool else ""
             print(f"Continuing MCMC{workers_s}: +{total_steps} thinned steps "
@@ -657,10 +744,14 @@ class DEMCPTSampler:
                             for j in range(nchains):
                                 if rng.random() < 0.5:
                                     nswap_attempt += 1
+                                    if self.adapt_temps:
+                                        pair_attempt[m] += 1
                                     log_alpha = ((betas[m] - betas[m + 1])
                                                  * (logp[j, m + 1] - logp[j, m]))
                                     if np.log(rng.random()) < log_alpha:
                                         nswap += 1
+                                        if self.adapt_temps:
+                                            pair_swap[m] += 1
                                         pos[j, m], pos[j, m + 1] = (
                                             pos[j, m + 1].copy(), pos[j, m].copy())
                                         logp[j, m], logp[j, m + 1] = (
@@ -690,6 +781,15 @@ class DEMCPTSampler:
                 i = old_steps + k
                 chain[i] = pos[:, 0]
                 log_prob[i] = logp[:, 0]
+
+                # --- adaptive temperature ladder ---
+                if self.adapt_temps:
+                    safe = pair_attempt > 0
+                    rates = np.zeros(ntemps - 1)
+                    rates[safe] = pair_swap[safe] / pair_attempt[safe]
+                    self._adapt_betas(rates, i)
+                    betas = self.betas
+                    betas_history[i] = betas.copy()
 
                 if save_every > 0 and (i + 1) % save_every == 0:
                     self._chain = chain[:i + 1]
@@ -764,6 +864,8 @@ class DEMCPTSampler:
         self._pos_full = pos
         self._logp_full = logp
         self._acceptance_rate = naccept / max(nattempt, 1)
+        if self.adapt_temps:
+            self._betas_history = betas_history[:final_step]
         return converged
 
     # ----- emcee-compatible API ----------------------------------------------
@@ -911,6 +1013,9 @@ class DEMCPTSampler:
             if self._logp_full is not None:
                 f.create_dataset("logp_full", data=self._logp_full, compression="gzip",
                                  compression_opts=4)
+            if self._betas_history is not None:
+                f.create_dataset("betas_history", data=self._betas_history,
+                                 compression="gzip", compression_opts=4)
             cfg = f.create_group("config")
             cfg.attrs["ndim"] = self.ndim
             cfg.attrs["nchains"] = self.nchains
@@ -918,6 +1023,8 @@ class DEMCPTSampler:
             cfg.attrs["maxgr"] = self.maxgr
             cfg.attrs["mintz"] = self.mintz
             cfg.attrs["stretch"] = self.stretch
+            cfg.attrs["adapt_temps"] = self.adapt_temps
+            cfg.attrs["adapt_halflife"] = self.adapt_halflife
             cfg.create_dataset("betas", data=self.betas)
 
     @classmethod
@@ -935,15 +1042,20 @@ class DEMCPTSampler:
             maxgr = float(cfg.attrs["maxgr"])
             mintz = float(cfg.attrs["mintz"])
             stretch = bool(cfg.attrs["stretch"])
+            adapt_temps = bool(cfg.attrs.get("adapt_temps", False))
+            adapt_halflife = float(cfg.attrs.get("adapt_halflife", 1000))
             betas = cfg["betas"][:]
+            betas_history = f["betas_history"][:] if "betas_history" in f else None
 
         sampler = cls(log_posterior, ndim=ndim, nchains=nchains,
-                      ntemps=ntemps, stretch=stretch, maxgr=maxgr, mintz=mintz)
+                      ntemps=ntemps, stretch=stretch, maxgr=maxgr, mintz=mintz,
+                      adapt_temps=adapt_temps, adapt_halflife=adapt_halflife)
         sampler.betas = betas
         sampler._chain = chain
         sampler._log_prob = log_prob_data
         sampler._pos_full = pos_full
         sampler._logp_full = logp_full
+        sampler._betas_history = betas_history
         return sampler
 
     def save_as_emcee_backend(self, filename):
