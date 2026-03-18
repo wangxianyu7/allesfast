@@ -27,13 +27,20 @@ from .sed_utils import mistmultised, read_sed_file
 _MODULE_PATH = pathlib.Path(os.path.dirname(os.path.abspath(__file__)))
 _SED_PATH    = _MODULE_PATH / 'sed'
 
-# NextGen model grid path — override via env var ALLESFAST_NEXTGEN_PATH
-_NEXTGEN_PATH = pathlib.Path(
-    os.environ.get(
-        'ALLESFAST_NEXTGEN_PATH',
-        '/Users/wangxianyu/Applications/NV5/idl90/lib/EXOFASTv2/sed/nextgenfin',
+# NextGen model grid path — set via env var ALLESFAST_NEXTGEN_PATH
+_NEXTGEN_PATH_STR = os.environ.get('ALLESFAST_NEXTGEN_PATH', None)
+if _NEXTGEN_PATH_STR is None:
+    import warnings
+    warnings.warn(
+        "Environment variable ALLESFAST_NEXTGEN_PATH is not set. "
+        "SED diagnostic plots requiring NextGen model atmospheres will not work. "
+        "Please set it to the path of the nextgenfin directory, e.g.:\n"
+        "  export ALLESFAST_NEXTGEN_PATH=/path/to/EXOFASTv2/sed/nextgenfin",
+        stacklevel=2,
     )
-)
+    _NEXTGEN_PATH = None
+else:
+    _NEXTGEN_PATH = pathlib.Path(_NEXTGEN_PATH_STR)
 
 # Wavelength grid matching NextGen models (0.1–24 μm, 24000 points)
 _WAVELENGTH = np.arange(24000) / 1000.0 + 0.1
@@ -83,6 +90,8 @@ def _interp_atmosphere(teff, logg, feh):
     Trilinearly interpolate NextGen λFλ at given (Teff, logg, [Fe/H]).
     Returns ndarray shape (24000,) or None if out of range / files missing.
     """
+    if _NEXTGEN_PATH is None:
+        return None
     if not (_ALLOWED_TEFF[0] <= teff <= _ALLOWED_TEFF[-1]):
         return None
     if not (_ALLOWED_LOGG[0] <= logg <= _ALLOWED_LOGG[-1]):

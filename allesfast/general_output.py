@@ -1085,26 +1085,25 @@ def save_modelfiles(samples, prefix):
             dt = 2. / 24. / 60. if key == 'flux' else (span / 500. if span > 0 else 2. / 24. / 60.)
             xx = np.arange(time[0], time[-1] + dt, dt)
 
-            # For RM instruments, extend dense time to cover full ±T14*0.7
-            is_rm = False
-            for companion in config.BASEMENT.settings.get('companions', ['b']):
-                rm_key = f'{companion}_flux_weighted_{inst}'
-                if config.BASEMENT.settings.get(rm_key, False):
-                    is_rm = True
-                    # Compute T14 and extend range around nearest transit center
-                    per   = params_median.get(f'{companion}_period', 1.0)
-                    epoch = params_median.get(f'{companion}_epoch', 0.0)
-                    mid_time = (time[0] + time[-1]) / 2.0
-                    n_tr = round((mid_time - epoch) / per)
-                    local_epoch = epoch + n_tr * per
-                    from .utils.plot_publication import _compute_t14
-                    t14_hrs = _compute_t14(params_median, companion)
-                    t14_days = t14_hrs / 24.0
-                    t_lo = local_epoch - t14_days * 3
-                    t_hi = local_epoch + t14_days * 3
-                    xx = np.arange(min(t_lo, time[0]),
-                                   max(t_hi, time[-1]) + dt, dt)
-                    break
+            # Extend dense time grid to cover full transits / RM events
+            # so that partial transits are plotted with the complete model.
+            from .utils.plot_publication import _compute_t14
+            _companions_key = 'companions_phot' if key == 'flux' else 'companions_rv'
+            t_lo_ext, t_hi_ext = time[0], time[-1]
+            for companion in config.BASEMENT.settings.get(_companions_key, ['b']):
+                per   = params_median.get(f'{companion}_period', None)
+                epoch = params_median.get(f'{companion}_epoch', None)
+                if per is None or epoch is None or per <= 0:
+                    continue
+                t14_hrs = _compute_t14(params_median, companion)
+                t14_days = t14_hrs / 24.0
+                mid_time = (time[0] + time[-1]) / 2.0
+                n_tr = round((mid_time - epoch) / per)
+                local_epoch = epoch + n_tr * per
+                t_lo_ext = min(t_lo_ext, local_epoch - t14_days * 3)
+                t_hi_ext = max(t_hi_ext, local_epoch + t14_days * 3)
+            if t_lo_ext < time[0] or t_hi_ext > time[-1]:
+                xx = np.arange(t_lo_ext, t_hi_ext + dt, dt)
             model_dense       = calculate_model(params_median, inst, key, xx=xx)
             baseline_dense    = calculate_baseline(params_median, inst, key, xx=xx)
             stellar_var_dense = calculate_stellar_var(params_median, 'all', key, xx=xx)
