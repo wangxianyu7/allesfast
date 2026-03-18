@@ -1136,10 +1136,12 @@ def save_modelfiles(samples, prefix):
                     _p = get_params_from_samples(_s[np.newaxis, :])[0]
                     _full = calculate_model(_p, inst, key, xx=xx)
                     _models.append(_full)
-                    # For RM instruments: subtract per-sample Keplerian to get RM-only band
+                    # For RM instruments: subtract ALL companions' Keplerian to get RM-only band
                     if _is_rm_inst:
                         from .utils.plot_publication import _compute_keplerian_from_params
-                        _kep = _compute_keplerian_from_params(xx, _p, _rm_comp)
+                        _all_comps = [c for c in 'bcdefghij'
+                                      if _p.get(f'{c}_period') is not None and _p.get(f'{c}_K') is not None]
+                        _kep = sum(_compute_keplerian_from_params(xx, _p, c) for c in _all_comps)
                         _rm_models.append(_full - _kep)
                 _models = np.array(_models)
                 model_dense_p16 = np.percentile(_models, 16, axis=0)

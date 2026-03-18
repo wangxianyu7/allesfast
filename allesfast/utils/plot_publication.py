@@ -893,9 +893,13 @@ def _plot_rm(ax_top, ax_bot, d, epoch, params, companion='b',
     t_hrs  = (d['time']       - local_epoch) * 24.
     td_hrs = (d['time_dense'] - local_epoch) * 24.
 
-    # Subtract Keplerian orbit to isolate RM anomaly
-    kep_data  = _compute_keplerian(d['time'],       params, companion)
-    kep_dense = _compute_keplerian(d['time_dense'], params, companion)
+    # Subtract Keplerian orbits of ALL companions to isolate RM anomaly.
+    # model_dense includes all companions' RV (Keplerian + RM), so we must
+    # remove every companion's Keplerian to leave only the RM signal.
+    _all_comps = [c for c in 'bcdefghij'
+                  if f'{c}_period' in params and f'{c}_K' in params]
+    kep_data  = sum(_compute_keplerian(d['time'],       params, c) for c in _all_comps)
+    kep_dense = sum(_compute_keplerian(d['time_dense'], params, c) for c in _all_comps)
 
     # Baseline-subtracted, Keplerian-removed RM signal in m/s
     y     = (d['data'] - d['baseline'] - d['stellar_var'] - kep_data) * 1e3
