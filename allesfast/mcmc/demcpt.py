@@ -275,12 +275,17 @@ class DEMCPTSampler:
         Convergence threshold for Gelman-Rubin (default 1.01).
     mintz : float, optional
         Convergence threshold for independent draws (default 1000).
+    swap_mode : str, optional
+        'bidirectional' (default): standard PT swap — cold and hot
+        exchange positions.  'unidirectional': EXOFASTv2 style — cold
+        chain adopts hot position, hot chain keeps its own.
     seed : int or None
     """
 
     def __init__(self, log_posterior, ndim, nchains=None, ntemps=1, Tf=200.0,
                  stretch=False, maxgr=1.01, mintz=1000, seed=None,
-                 adapt_temps=False, adapt_halflife=1000):
+                 adapt_temps=False, adapt_halflife=1000,
+                 swap_mode='bidirectional'):
         self.logpost_func = log_posterior
         self.ndim = ndim
         self.nchains = nchains or max(2 * ndim, 3)
@@ -299,6 +304,11 @@ class DEMCPTSampler:
         # adaptive temperature ladder (SAR method, cf. reddemcee)
         self.adapt_temps = adapt_temps and ntemps > 1
         self.adapt_halflife = adapt_halflife
+
+        # swap mode: 'bidirectional' (standard PT) or 'unidirectional' (EXOFASTv2)
+        if swap_mode not in ('bidirectional', 'unidirectional'):
+            raise ValueError(f"swap_mode must be 'bidirectional' or 'unidirectional', got {swap_mode!r}")
+        self.swap_mode = swap_mode
 
         self.gamma = 2.38 / np.sqrt(2.0 * ndim)
         self.a_stretch = 2.0
@@ -553,10 +563,16 @@ class DEMCPTSampler:
                                         nswap += 1
                                         if self.adapt_temps:
                                             pair_swap[m] += 1
-                                        pos[j, m], pos[j, m + 1] = (
-                                            pos[j, m + 1].copy(), pos[j, m].copy())
-                                        logp[j, m], logp[j, m + 1] = (
-                                            logp[j, m + 1], logp[j, m])
+                                        if self.swap_mode == 'bidirectional':
+                                            pos[j, m], pos[j, m + 1] = (
+                                                pos[j, m + 1].copy(), pos[j, m].copy())
+                                            logp[j, m], logp[j, m + 1] = (
+                                                logp[j, m + 1], logp[j, m])
+                                        else:
+                                            # unidirectional: cold adopts hot position,
+                                            # hot keeps its own (EXOFASTv2 style)
+                                            pos[j, m] = pos[j, m + 1].copy()
+                                            logp[j, m] = logp[j, m + 1]
 
                         if self.stretch:
                             proposals, log_facs = self._stretch_proposals_batch(
@@ -752,10 +768,14 @@ class DEMCPTSampler:
                                         nswap += 1
                                         if self.adapt_temps:
                                             pair_swap[m] += 1
-                                        pos[j, m], pos[j, m + 1] = (
-                                            pos[j, m + 1].copy(), pos[j, m].copy())
-                                        logp[j, m], logp[j, m + 1] = (
-                                            logp[j, m + 1], logp[j, m])
+                                        if self.swap_mode == 'bidirectional':
+                                            pos[j, m], pos[j, m + 1] = (
+                                                pos[j, m + 1].copy(), pos[j, m].copy())
+                                            logp[j, m], logp[j, m + 1] = (
+                                                logp[j, m + 1], logp[j, m])
+                                        else:
+                                            pos[j, m] = pos[j, m + 1].copy()
+                                            logp[j, m] = logp[j, m + 1]
 
                         if self.stretch:
                             proposals, log_facs = self._stretch_proposals_batch(m, pos)
