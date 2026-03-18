@@ -13,6 +13,8 @@ import time
 import numpy as np
 from scipy.special import logsumexp
 import emcee
+import ptemcee
+import reddemcee
 
 import sys, os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
@@ -117,6 +119,69 @@ def run_emcee(logpost, ndim, p0, nsteps, seed=42, moves=None, label=None):
             'ess_per_sec': min_ess / elapsed, 'flat': flat}
 
 
+# ---- ptemcee runner --------------------------------------------------------
+def _flat_prior(theta):
+    return 0.0
+
+
+def run_ptemcee(loglike, ndim, p0, nsteps, ntemps=8, seed=42):
+    nwalkers = max(2 * ndim, 10)
+    if nwalkers % 2 == 1:
+        nwalkers += 1
+    rng = np.random.default_rng(seed)
+    p0_ens = np.empty((ntemps, nwalkers, ndim))
+    for m in range(ntemps):
+        p0_ens[m] = p0 + 0.1 * rng.standard_normal((nwalkers, ndim))
+
+    sampler = ptemcee.Sampler(
+        nwalkers, ndim, loglike, _flat_prior,
+        ntemps=ntemps, Tmax=100.0, random=np.random.RandomState(seed),
+    )
+    t0 = time.perf_counter()
+    sampler.run_mcmc(p0_ens, nsteps)
+    elapsed = time.perf_counter() - t0
+
+    # chain shape: (ntemps, nwalkers, nsteps, ndim)
+    cold = sampler.chain[0, :, :, :]  # (nwalkers, nsteps, ndim)
+    cold = cold.transpose(1, 0, 2)     # (nsteps, nwalkers, ndim)
+    burn = int(0.3 * cold.shape[0])
+    flat = cold[burn:].reshape(-1, ndim)
+    min_ess = compute_min_ess(flat)
+
+    return {'elapsed': elapsed, 'min_ess': min_ess,
+            'ess_per_sec': min_ess / elapsed, 'flat': flat}
+
+
+# ---- reddemcee runner ------------------------------------------------------
+def run_reddemcee(loglike, ndim, p0, nsteps, ntemps=8, seed=42):
+    nwalkers = max(2 * ndim, 10)
+    if nwalkers % 2 == 1:
+        nwalkers += 1
+    rng = np.random.default_rng(seed)
+    # reddemcee expects p0 shape (ntemps, nwalkers, ndim)
+    p0_ens = np.empty((ntemps, nwalkers, ndim))
+    for m in range(ntemps):
+        p0_ens[m] = p0 + 0.1 * (m + 1) * rng.standard_normal((nwalkers, ndim))
+
+    sampler = reddemcee.PTSampler(
+        nwalkers, ndim, loglike, _flat_prior, ntemps=ntemps,
+    )
+    # reddemcee uses nsteps * nsweeps total; we do nsweeps=nsteps, nsteps=1
+    t0 = time.perf_counter()
+    sampler.run_mcmc(p0_ens, nsteps=1, nsweeps=nsteps, progress=False)
+    elapsed = time.perf_counter() - t0
+
+    # cold chain: temperature index 0
+    chain = sampler.get_chain()  # (ntemps, nsteps*nsweeps, nwalkers, ndim)
+    cold = chain[0, :, :, :]     # (nsteps*nsweeps, nwalkers, ndim)
+    burn = int(0.3 * cold.shape[0])
+    flat = cold[burn:].reshape(-1, ndim)
+    min_ess = compute_min_ess(flat)
+
+    return {'elapsed': elapsed, 'min_ess': min_ess,
+            'ess_per_sec': min_ess / elapsed, 'flat': flat}
+
+
 # ---- print helper ----------------------------------------------------------
 def print_row(label, res, extra=''):
     print(f"  {label:25s} | time={res['elapsed']:6.2f}s | "
@@ -154,6 +219,16 @@ if __name__ == '__main__':
         print_row(label, res,
                   f" | modes={'YES' if found else 'NO'} ({f1:.0%}/{f2:.0%})")
 
+    res = run_ptemcee(log_bimodal, NDIM, p0_bm, 4000, ntemps=8)
+    found, f1, f2 = check_bimodal(res['flat'])
+    print_row('ptemcee', res,
+              f" | modes={'YES' if found else 'NO'} ({f1:.0%}/{f2:.0%})")
+
+    res = run_reddemcee(log_bimodal, NDIM, p0_bm, 4000, ntemps=8)
+    found, f1, f2 = check_bimodal(res['flat'])
+    print_row('reddemcee', res,
+              f" | modes={'YES' if found else 'NO'} ({f1:.0%}/{f2:.0%})")
+
     # --- Test 2: Rosenbrock banana ---
     print("\n--- Test 2: Rosenbrock banana (2D) ---\n")
     p0_r = np.array([0.0, 0.0])
@@ -167,6 +242,14 @@ if __name__ == '__main__':
         res = run_emcee(log_rosenbrock, 2, p0_r, 5000, moves=moves)
         mx, my = res['flat'][:, 0].mean(), res['flat'][:, 1].mean()
         print_row(label, res, f" | mean=({mx:.2f}, {my:.2f})")
+
+    res = run_ptemcee(log_rosenbrock, 2, p0_r, 5000, ntemps=8)
+    mx, my = res['flat'][:, 0].mean(), res['flat'][:, 1].mean()
+    print_row('ptemcee', res, f" | mean=({mx:.2f}, {my:.2f})")
+
+    res = run_reddemcee(log_rosenbrock, 2, p0_r, 5000, ntemps=8)
+    mx, my = res['flat'][:, 0].mean(), res['flat'][:, 1].mean()
+    print_row('reddemcee', res, f" | mean=({mx:.2f}, {my:.2f})")
 
     # --- Test 3: Correlated Gaussian 20D ---
     print("\n--- Test 3: Correlated Gaussian (20D) ---\n")
@@ -185,6 +268,12 @@ if __name__ == '__main__':
     for label, moves in emcee_moves:
         res = run_emcee(log_corr_gauss, ndim20, p0_20, 5000, moves=moves)
         print_row(label, res)
+
+    res = run_ptemcee(log_corr_gauss, ndim20, p0_20, 5000, ntemps=8)
+    print_row('ptemcee', res)
+
+    res = run_reddemcee(log_corr_gauss, ndim20, p0_20, 5000, ntemps=8)
+    print_row('reddemcee', res)
 
     print("\n" + "=" * 75)
     print("Done.")

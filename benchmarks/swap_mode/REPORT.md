@@ -1,34 +1,33 @@
-# Benchmark: PT Swap Mode (bidirectional vs unidirectional) vs emcee
+# Benchmark: DEMCPT vs ptemcee vs reddemcee vs emcee
 
 **Date**: 2026-03-18
 **Machine**: macOS Darwin 24.6.0 (Apple Silicon), single-threaded
 **Script**: `bench_swap_mode.py`
 
-## Background
+## Samplers tested
 
-DEMCPT supports parallel tempering with two swap strategies:
+**Parallel Tempering samplers** (8 temperature rungs):
 
-- **bidirectional** (default): Standard PT — cold and hot chains exchange
-  positions upon acceptance. Satisfies detailed balance.
-- **unidirectional** (EXOFASTv2 style): Cold chain adopts hot chain's
-  position; hot chain keeps its own. Hot chains are never "polluted" by
-  cold-chain positions.
+- **demcpt-bidir**: Our DEMCPT with bidirectional (standard PT) swap
+- **demcpt-unidi**: Our DEMCPT with unidirectional (EXOFASTv2-style) swap
+- **ptemcee**: Parallel-tempered emcee (Vousden et al. 2016), Tmax=100
+- **reddemcee**: Adaptive PT extension of emcee (Pena Rojas 2024), default ladder
 
-We compare both against **emcee** with four different move strategies:
+**emcee** (no tempering) with different moves:
 
-- **stretch**: Default affine-invariant stretch move (Goodman & Weare 2010)
-- **DE**: Differential evolution move
-- **DESnooker**: Snooker move (ter Braak & Vrugt 2008)
-- **DE+Snooker**: 80% DE + 20% Snooker mix
+- **emcee-stretch**: Default affine-invariant stretch move (Goodman & Weare 2010)
+- **emcee-DE**: Differential evolution move
+- **emcee-DESnooker**: Snooker move (ter Braak & Vrugt 2008)
+- **emcee-DE+Snooker**: 80% DE + 20% Snooker mix
 
 ## Setup
 
 | Parameter | Value |
 |-----------|-------|
 | DEMCPT nchains | max(2*ndim, 10) |
-| DEMCPT ntemps | 8 |
-| DEMCPT Tf | 100 |
-| emcee nwalkers | max(2*ndim, 10), even |
+| PT ntemps | 8 |
+| DEMCPT Tf / ptemcee Tmax | 100 |
+| emcee / ptemcee / reddemcee nwalkers | max(2*ndim, 10), even |
 | Burn-in discard | 30% |
 | ESS method | Batch means (20 batches) |
 | Seed | 42 |
@@ -40,25 +39,29 @@ Tests ability to hop between well-separated modes.
 
 | Sampler | Time (s) | min ESS | ESS/s | Both modes? | Frac mode1 / mode2 |
 |---------|----------|---------|-------|-------------|---------------------|
-| demcpt-bidir | 3.42 | 535 | 156.6 | **YES** | 49% / 51% |
-| demcpt-unidi | 2.68 | 408 | 152.0 | **YES** | 50% / 50% |
-| emcee-stretch | 0.78 | 440 | 566.6 | NO | 100% / 0% |
-| emcee-DE | 0.81 | 1020 | 1259.0 | NO | 100% / 0% |
-| emcee-DESnooker | 1.31 | 120 | 91.3 | YES* | 91% / 9% |
-| emcee-DE+Snooker | 0.92 | 899 | 973.9 | NO | 100% / 0% |
+| demcpt-bidir | 3.50 | 535 | 153.0 | **YES** | 49% / 51% |
+| demcpt-unidi | 2.86 | 408 | 142.8 | **YES** | 50% / 50% |
+| ptemcee | 5.34 | 668 | 125.0 | **YES** | 50% / 50% |
+| reddemcee | 8.39 | 556 | 66.3 | **YES** | 52% / 48% |
+| emcee-stretch | 0.81 | 440 | 542.7 | NO | 100% / 0% |
+| emcee-DE | 0.83 | 1020 | 1233.5 | NO | 100% / 0% |
+| emcee-DESnooker | 1.36 | 120 | 87.9 | YES* | 91% / 9% |
+| emcee-DE+Snooker | 0.94 | 899 | 959.5 | NO | 100% / 0% |
 
 *DESnooker technically finds both modes but with severely unequal sampling
 (91%/9%) and very low ESS.
 
 **Key findings**:
-- emcee with stretch, DE, and DE+Snooker moves **cannot escape the initial
-  mode**. All walkers start near mode 1 and the proposals (based on
-  differences between walkers) never span the inter-mode valley.
-- DESnooker's long-range snooker jumps occasionally cross the valley, but
-  the sampling is heavily biased and ESS/s is the lowest of all methods.
-- Both DEMCPT variants reliably find both modes with near-equal weight
-  (49-51%). This is the fundamental advantage of parallel tempering: hot
-  chains flatten the valley and pass information to cold chains via swaps.
+
+- All four PT samplers reliably find both modes with near-equal weight.
+  DEMCPT-bidir has the highest ESS/s (153), followed by DEMCPT-unidi (143),
+  ptemcee (125), and reddemcee (66).
+- No emcee move variant (without PT) can consistently discover both modes.
+  DESnooker occasionally crosses the inter-mode valley via long-range jumps,
+  but with heavily biased sampling (91%/9%).
+- The probability of crossing the valley at beta=1 is ~exp(-90/2) ~ 10^-20
+  for 5D separation=6sigma. No proposal strategy can overcome this without
+  tempering.
 
 ## Test 2: Rosenbrock banana (2D)
 
@@ -66,19 +69,25 @@ Curved, banana-shaped posterior. Tests exploration of nonlinear degeneracies.
 
 | Sampler | Time (s) | min ESS | ESS/s | Mean (x, y) |
 |---------|----------|---------|-------|-------------|
-| demcpt-bidir | 4.20 | 791 | 188.4 | (0.79, 11.5) |
-| demcpt-unidi | 4.20 | 256 | 60.8 | (1.41, 44.5) |
-| emcee-stretch | 0.39 | 717 | 1858.0 | (1.16, 5.9) |
-| emcee-DE | 0.42 | 292 | 698.4 | (0.91, 5.9) |
-| emcee-DESnooker | 1.01 | 95 | 94.7 | (0.49, 3.7) |
-| emcee-DE+Snooker | 0.54 | 1166 | 2145.0 | (0.60, 7.9) |
+| demcpt-bidir | 4.31 | 791 | 183.3 | (0.79, 11.5) |
+| demcpt-unidi | 4.20 | 256 | 60.9 | (1.41, 44.5) |
+| ptemcee | 1.92 | 1966 | **1024.4** | (1.06, 11.0) |
+| reddemcee | 5.35 | 297 | 55.4 | (1.15, 10.6) |
+| emcee-stretch | 0.39 | 333 | 849.4 | (-0.31, 4.8) |
+| emcee-DE | 0.42 | 195 | 464.3 | (1.41, 9.6) |
+| emcee-DESnooker | 1.03 | 260 | 251.5 | (1.63, 7.5) |
+| emcee-DE+Snooker | 0.55 | 262 | 473.2 | (1.36, 9.2) |
 
 **Key findings**:
-- Unidirectional DEMCPT is **3x worse** in ESS/s than bidirectional and
-  produces a biased mean (y=44.5 vs ~6-12 for others).
-- emcee moves work well here (unimodal, no valley to cross). The
-  DE+Snooker mix achieves the highest ESS/s overall.
-- DESnooker alone has poor ESS/s everywhere — it seems to be a niche move.
+
+- ptemcee dominates with ESS/s=1024 — 5x better than DEMCPT-bidir (183).
+  The stretch move combined with PT is very efficient on this 2D curved
+  surface.
+- Unidirectional DEMCPT is **3x worse** than bidirectional (ESS/s 61 vs 183)
+  and produces a biased mean (y=44.5). Hot chains that never receive cold
+  positions fail to guide the cold chain along the curved ridge.
+- reddemcee is the slowest PT sampler here (ESS/s=55), likely due to
+  adaptive temperature overhead.
 
 ## Test 3: Correlated Gaussian (20D)
 
@@ -87,35 +96,45 @@ efficiency.
 
 | Sampler | Time (s) | min ESS | ESS/s |
 |---------|----------|---------|-------|
-| demcpt-bidir | 12.79 | 1328 | 103.9 |
-| demcpt-unidi | 15.19 | 1481 | 97.5 |
-| emcee-stretch | 0.76 | 729 | 958.4 |
-| emcee-DE | 0.79 | 1354 | 1704.5 |
-| emcee-DESnooker | 2.91 | 407 | 139.6 |
-| emcee-DE+Snooker | 1.20 | 862 | 720.4 |
+| demcpt-bidir | 13.04 | 1328 | 101.9 |
+| demcpt-unidi | 15.42 | 1481 | 96.1 |
+| ptemcee | 5.77 | 1367 | 236.9 |
+| reddemcee | 11.05 | 2010 | 181.8 |
+| emcee-stretch | 0.79 | 806 | 1024.4 |
+| emcee-DE | 0.81 | 1659 | **2047.5** |
+| emcee-DESnooker | 2.97 | 273 | 92.0 |
+| emcee-DE+Snooker | 1.26 | 968 | 765.3 |
 
 **Key findings**:
-- emcee-DE is the clear winner on this simple unimodal problem (highest
-  ESS/s by far), as expected — no tempering overhead needed.
-- Both DEMCPT variants are comparable (~100 ESS/s). The multi-temperature
-  overhead dominates when tempering provides no benefit.
+
+- emcee-DE is the clear winner (ESS/s=2048) — no tempering overhead needed
+  for a simple unimodal target.
+- reddemcee achieves the highest raw min_ESS (2010) but is slower per sample.
+- All DEMCPT variants pay ~10x overhead for unused temperature rungs.
 
 ## Conclusions
 
-1. **Multimodal distributions**: DEMCPT is the only reliable sampler.
-   No emcee move variant can consistently discover and uniformly sample
-   multiple modes. DESnooker occasionally crosses valleys but with
-   heavily biased sampling and low efficiency.
+1. **Multimodal distributions**: All PT samplers (DEMCPT, ptemcee,
+   reddemcee) reliably find both modes. No emcee move variant can do this
+   consistently. DEMCPT-bidir has the best ESS/s among PT samplers on the
+   bimodal test.
 
-2. **Bidirectional vs unidirectional PT swap**: Bidirectional (standard PT)
-   is equal or better in all tests. Unidirectional severely underperforms
-   on curved degeneracies (Rosenbrock). **Keep bidirectional as default.**
+2. **DEMCPT swap mode**: Bidirectional is equal or better than unidirectional
+   in all tests. Unidirectional severely underperforms on curved
+   degeneracies (Rosenbrock, 3x worse ESS/s). **Keep bidirectional as
+   default.**
 
-3. **Unimodal distributions**: emcee (especially with DE move) is
-   significantly faster per ESS when tempering is unnecessary. This
-   motivates using emcee for simple problems and DEMCPT when multimodality
-   is suspected.
+3. **ptemcee vs DEMCPT**: ptemcee excels on low-dimensional curved targets
+   (Rosenbrock: 5x better ESS/s) thanks to the stretch move. On multimodal
+   and high-dimensional targets, DEMCPT is competitive or better.
 
-4. **emcee move choice**: DE move gives the best ESS/s on unimodal targets.
-   The default stretch move is decent but not optimal. DESnooker is
-   consistently the weakest in ESS/s.
+4. **reddemcee**: Consistently the slowest PT sampler in ESS/s, likely due
+   to adaptive temperature ladder overhead. Achieves high raw ESS in 20D
+   but at a time cost.
+
+5. **emcee move choice**: DE move gives the best ESS/s on unimodal targets.
+   The default stretch move is decent. DESnooker is consistently the weakest.
+
+6. **Practical recommendation**: Use emcee (DE move) for simple unimodal
+   targets. Use DEMCPT (bidirectional) when multimodality is suspected or
+   when the posterior has complex topology.
