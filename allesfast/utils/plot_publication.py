@@ -768,7 +768,7 @@ def _plot_transit(ax_top, ax_bot, d, period, epoch, t14_hrs=None,
 
     ax_bot.scatter(t_res, r_plot * 1e3, marker='.', color='grey', s=20,
                    alpha=0.5)
-    ax_bot.axhline(0, ls='--', color='red', lw=0.8)
+    ax_bot.axhline(0, ls='--', color='crimson', lw=0.8)
     ax_bot.set_xlabel(r'Time $-$ $T_0$ (hrs)', fontsize=20, fontweight='bold')
     ax_bot.set_ylabel('Res (ppt)', fontsize=20, fontweight='bold')
     _symmetrise_residual_ylim(ax_bot)
@@ -835,7 +835,7 @@ def _plot_rv_phased(ax_top, ax_bot, modelfiles_dict, rv_insts, period, epoch,
     ax_top.set_ylabel('RV (m/s)', fontsize=20, fontweight='bold')
     # Legend is drawn as a shared figlegend; skip per-panel legend here.
 
-    ax_bot.axhline(0, ls='--', color='red', lw=0.8)
+    ax_bot.axhline(0, ls='--', color='crimson', lw=0.8)
     ax_bot.set_xlabel(r'Phase $+\,(T_p-T_0)/P$', fontsize=20, fontweight='bold')
     ax_bot.set_ylabel('Res (m/s)', fontsize=20, fontweight='bold')
     _symmetrise_residual_ylim(ax_bot)
@@ -918,7 +918,7 @@ def _plot_rm(ax_top, ax_bot, d, epoch, params, companion='b',
     ax_bot.errorbar(t_hrs, resid, yerr=yerr, fmt=marker, markerfacecolor=mfc,
                     markeredgecolor=mec, ecolor=ec,
                     capsize=3, capthick=1, ms=markersize)
-    ax_bot.axhline(0, ls='--', color='red', lw=0.8)
+    ax_bot.axhline(0, ls='--', color='crimson', lw=0.8)
     ax_bot.set_xlabel(r'Time $-$ $T_0$ (hrs)', fontsize=20, fontweight='bold')
     ax_bot.set_ylabel('Res (m/s)', fontsize=20, fontweight='bold')
     _symmetrise_residual_ylim(ax_bot)
