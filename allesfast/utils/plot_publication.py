@@ -304,7 +304,7 @@ def _find_derived(derived, substring):
     return None
 
 
-def _build_param_text(params_we, companion='b', derived=None):
+def _build_param_text(params_we, companion='b', derived=None, is_transiting=True):
     """Build a multi-line LaTeX string of key parameters for annotation.
 
     Parameters
@@ -396,19 +396,21 @@ def _build_param_text(params_we, companion='b', derived=None):
         med, lo, hi = ar_d
         lines.append('$a/R_*$: ' + _format_val_err(med, lo, hi))
 
-    # Lambda (from derived table)
-    lam_d = _find_derived(derived, 'Spin-orbit angle')
-    if lam_d is not None:
-        med, lo, hi = lam_d
-        lines.append('$\\lambda$: ' + _format_val_err(med, lo, hi)
-                      + '$^\\circ$')
+    # Lambda and vsini only for transiting companions (RM observables)
+    if is_transiting:
+        # Lambda (from derived table)
+        lam_d = _find_derived(derived, 'Spin-orbit angle')
+        if lam_d is not None:
+            med, lo, hi = lam_d
+            lines.append('$\\lambda$: ' + _format_val_err(med, lo, hi)
+                          + '$^\\circ$')
 
-    # vsini (from derived table)
-    vsini_d = _find_derived(derived, 'Projected stellar rotation')
-    if vsini_d is not None:
-        med, lo, hi = vsini_d
-        lines.append('$v\\sin{i_*}$: ' + _format_val_err(med, lo, hi)
-                      + ' km/s')
+        # vsini (from derived table)
+        vsini_d = _find_derived(derived, 'Projected stellar rotation')
+        if vsini_d is not None:
+            med, lo, hi = vsini_d
+            lines.append('$v\\sin{i_*}$: ' + _format_val_err(med, lo, hi)
+                          + ' km/s')
 
     return '\n'.join(lines)
 
@@ -778,7 +780,7 @@ def _plot_transit(ax_top, ax_bot, d, period, epoch, t14_hrs=None,
 
 
 def _plot_rv_phased(ax_top, ax_bot, modelfiles_dict, rv_insts, period, epoch,
-                    posterior_curves=None, get_marker=None):
+                    posterior_curves=None, get_marker=None, companion='b'):
     dense_done = False
     for i, inst in enumerate(rv_insts):
         if inst not in modelfiles_dict:
@@ -791,8 +793,14 @@ def _plot_rv_phased(ax_top, ax_bot, modelfiles_dict, rv_insts, period, epoch,
             ms = _RV_MARKERSIZES[i % len(_RV_MARKERSIZES)]
 
         ph    = _phase_fold(d['time'].copy(), period, epoch)
+        # Subtract baseline, stellar_var, and OTHER companions' RV models
         y     = (d['data'] - d['baseline'] - d['stellar_var']) * 1e3   # km/s → m/s
+        # Remove contributions from other companions so we see only `companion`
+        for _k in d.files if hasattr(d, 'files') else d.keys():
+            if _k.startswith('model_') and not _k.startswith('model_dense') and _k != f'model_{companion}':
+                y -= np.asarray(d[_k]) * 1e3
         yerr  = d['err'] * 1e3
+        # Residuals: data - total (all companions); keep as-is
         resid = d['residuals'] * 1e3
 
         ax_top.errorbar(ph, y, yerr=yerr, fmt=mk, markerfacecolor='white',
@@ -816,13 +824,26 @@ def _plot_rv_phased(ax_top, ax_bot, modelfiles_dict, rv_insts, period, epoch,
                                         color='k', alpha=0.1, zorder=3)
             else:
                 ph_d  = _phase_fold(d['time_dense'].copy(), period, epoch)
-                mod_d = d['model_dense'] * 1e3
+                # Use per-companion dense model if available; otherwise total
+                _comp_dense_key = f'model_dense_{companion}'
+                if _comp_dense_key in (d.files if hasattr(d, 'files') else d.keys()):
+                    mod_d = np.asarray(d[_comp_dense_key]) * 1e3
+                else:
+                    mod_d = d['model_dense'] * 1e3
                 idx   = np.argsort(ph_d)
                 ax_top.plot(ph_d[idx],     mod_d[idx], color='firebrick', lw=2, zorder=3)
                 ax_top.plot(ph_d[idx] + 1, mod_d[idx], color='firebrick', lw=2, zorder=3)
                 ax_top.plot(ph_d[idx] - 1, mod_d[idx], color='firebrick', lw=2, zorder=3)
-                p16 = d.get('model_dense_p16', None)
-                p84 = d.get('model_dense_p84', None)
+                # Use per-companion posterior bands if available
+                _p16_key = f'model_dense_{companion}_p16'
+                _p84_key = f'model_dense_{companion}_p84'
+                _keys = d.files if hasattr(d, 'files') else d.keys()
+                if _p16_key in _keys and _p84_key in _keys:
+                    p16 = d[_p16_key]
+                    p84 = d[_p84_key]
+                else:
+                    p16 = d.get('model_dense_p16', None)
+                    p84 = d.get('model_dense_p84', None)
                 if p16 is not None and p84 is not None:
                     p16_m = np.asarray(p16) * 1e3
                     p84_m = np.asarray(p84) * 1e3
@@ -905,13 +926,22 @@ def _plot_rm(ax_top, ax_bot, d, epoch, params, companion='b',
                             color='k', alpha=0.1, zorder=3)
     else:
         ax_top.plot(td_hrs, mod_d, color='firebrick', lw=2, zorder=3)
-        p16 = d.get('model_dense_p16', None)
-        p84 = d.get('model_dense_p84', None)
-        if p16 is not None and p84 is not None:
-            p16_rm = (np.asarray(p16) - kep_dense) * 1e3
-            p84_rm = (np.asarray(p84) - kep_dense) * 1e3
-            ax_top.fill_between(td_hrs, p16_rm, p84_rm,
+        # Prefer RM-only bands (per-sample Keplerian subtracted);
+        # fall back to full-model bands minus median Keplerian.
+        _rm_p16 = d.get('rm_dense_p16', None)
+        _rm_p84 = d.get('rm_dense_p84', None)
+        if _rm_p16 is not None and _rm_p84 is not None:
+            ax_top.fill_between(td_hrs, np.asarray(_rm_p16) * 1e3,
+                                np.asarray(_rm_p84) * 1e3,
                                 color='k', alpha=0.1, zorder=2)
+        else:
+            p16 = d.get('model_dense_p16', None)
+            p84 = d.get('model_dense_p84', None)
+            if p16 is not None and p84 is not None:
+                p16_rm = (np.asarray(p16) - kep_dense) * 1e3
+                p84_rm = (np.asarray(p84) - kep_dense) * 1e3
+                ax_top.fill_between(td_hrs, p16_rm, p84_rm,
+                                    color='k', alpha=0.1, zorder=2)
     ax_top.set_ylabel('RM (m/s)', fontsize=20, fontweight='bold')
     # Legend is drawn as a shared figlegend; skip per-panel legend here.
 
@@ -996,7 +1026,14 @@ def make_summary_plot(
     params   = _read_params(datadir, mode=prefix)
     period   = params.get(f'{companion}_period', 1.0)
     epoch    = params.get(f'{companion}_epoch',  0.0)
-    t14_hrs  = _compute_t14(params, companion)
+    try:
+        t14_hrs  = _compute_t14(params, companion)
+    except (TypeError, ValueError):
+        t14_hrs = None  # non-transiting companion
+
+    # Check if this companion transits
+    _companions_phot = settings.get('companions_phot', '').split() if settings.get('companions_phot') else []
+    _is_transiting = companion in _companions_phot
 
     s_phot = settings.get('inst_phot', '').split() if settings.get('inst_phot') else []
     s_rv   = settings.get('inst_rv',   '').split() if settings.get('inst_rv')   else []
@@ -1010,11 +1047,11 @@ def make_summary_plot(
         return os.path.exists(os.path.join(modeldir, f'{prefix}_{inst}.npz'))
 
     if phot_insts is None:
-        phot_insts = [i for i in s_phot if _avail(i)]
+        phot_insts = [i for i in s_phot if _avail(i)] if _is_transiting else []
     if rv_insts is None:
         rv_insts = [i for i in s_rv if i not in rm_set and _avail(i)]
     if rm_insts is None:
-        rm_insts = [i for i in s_rv if i in rm_set and _avail(i)]
+        rm_insts = [i for i in s_rv if i in rm_set and _avail(i)] if _is_transiting else []
 
     # Build a global telescope → (marker, markersize) map so the same
     # telescope always gets the same marker across RV and RM panels.
@@ -1039,20 +1076,21 @@ def make_summary_plot(
     has_sed = os.path.exists(os.path.join(modeldir, f'{prefix}_sed.npz'))
     has_rv  = bool(rv_insts)
 
-    # Fixed panels: SED, RV, RM are always present (placeholder if no data)
+    # Build panel list: SED + RV always; RM + transit only for transiting companions
     panels = []
     panels.append(('sed', None) if has_sed else ('empty', 'No SED data'))
     panels.append(('rv', rv_insts) if has_rv else ('empty', 'No RV data'))
-    if rm_insts:
-        if combine_rm:
-            panels.append(('rm_combined', rm_insts))
+    if _is_transiting:
+        if rm_insts:
+            if combine_rm:
+                panels.append(('rm_combined', rm_insts))
+            else:
+                for inst in rm_insts:
+                    panels.append(('rm', inst))
         else:
-            for inst in rm_insts:
-                panels.append(('rm', inst))
-    else:
-        panels.append(('empty', 'No RM data'))
-    for inst in phot_insts:
-        panels.append(('phot', inst))
+            panels.append(('empty', 'No RM data'))
+        for inst in phot_insts:
+            panels.append(('phot', inst))
 
     # Load modelfiles
     mf = {}
@@ -1115,7 +1153,7 @@ def make_summary_plot(
         elif ptype == 'rv':
             _plot_rv_phased(ax_top, ax_bot, mf, pval, period, epoch,
                             posterior_curves=post.get('_rv_combined'),
-                            get_marker=_get_marker)
+                            get_marker=_get_marker, companion=companion)
             rv_rm_axes_top.append(ax_top)
         elif ptype == 'rm':
             mk, ms = _get_marker(pval)
@@ -1186,7 +1224,8 @@ def make_summary_plot(
         derived = _read_derived_params(datadir, mode=prefix)
         if params_we or derived:
             param_text = _build_param_text(params_we, companion=companion,
-                                           derived=derived)
+                                           derived=derived,
+                                           is_transiting=_is_transiting)
             if param_text:
                 # Place target name + parameters in the right margin
                 text_x = right_margin + 0.02
@@ -1195,11 +1234,18 @@ def make_summary_plot(
                 else:
                     target_name = os.path.basename(os.path.realpath(datadir))
                     target_name = target_name.replace('_', ' ')
+                    # Replace trailing companion letter with the actual one
+                    # e.g. "HAT-P-13 b" → "HAT-P-13 c" when companion='c'
+                    if target_name.endswith(' b') and companion != 'b':
+                        target_name = target_name[:-1] + companion
                 fig.text(text_x, 0.95, target_name,
                          fontsize=20, ha='left', va='top',
                          fontweight='bold',
                          transform=fig.transFigure)
-                fig.text(text_x, 0.92, param_text,
+                # Use absolute spacing (~0.45 inches) below title
+                _fig_h = fig.get_size_inches()[1]
+                _param_y = 0.95 - 0.45 / _fig_h
+                fig.text(text_x, _param_y, param_text,
                          fontsize=16, ha='left', va='top',
                          transform=fig.transFigure,
                          linespacing=1.6)

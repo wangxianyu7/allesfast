@@ -1095,7 +1095,12 @@ def save_modelfiles(samples, prefix):
                 epoch = params_median.get(f'{companion}_epoch', None)
                 if per is None or epoch is None or per <= 0:
                     continue
-                t14_hrs = _compute_t14(params_median, companion)
+                try:
+                    t14_hrs = _compute_t14(params_median, companion)
+                except (TypeError, ValueError):
+                    continue  # non-transiting companion (no rr/cosi)
+                if t14_hrs is None or not np.isfinite(t14_hrs) or t14_hrs <= 0:
+                    continue
                 t14_days = t14_hrs / 24.0
                 mid_time = (time[0] + time[-1]) / 2.0
                 n_tr = round((mid_time - epoch) / per)
@@ -1108,21 +1113,66 @@ def save_modelfiles(samples, prefix):
             baseline_dense    = calculate_baseline(params_median, inst, key, xx=xx)
             stellar_var_dense = calculate_stellar_var(params_median, 'all', key, xx=xx)
 
+            # Detect if this is an RM instrument
+            _is_rm_inst = False
+            if key in ('rv', 'rv2'):
+                for _comp in config.BASEMENT.settings.get('companions_rv', []):
+                    if config.BASEMENT.settings.get(f'{_comp}_flux_weighted_{inst}', False):
+                        _is_rm_inst = True
+                        _rm_comp = _comp
+                        break
+
             # Compute 1-sigma band from posterior samples (up to 300 for speed)
             model_dense_p16 = model_dense
             model_dense_p84 = model_dense
+            rm_dense_p16 = None
+            rm_dense_p84 = None
             try:
                 _nsamp = min(len(samples), 300)
                 _idx   = np.random.choice(len(samples), _nsamp, replace=False)
                 _models = []
+                _rm_models = [] if _is_rm_inst else None
                 for _s in samples[_idx]:
                     _p = get_params_from_samples(_s[np.newaxis, :])[0]
-                    _models.append(calculate_model(_p, inst, key, xx=xx))
+                    _full = calculate_model(_p, inst, key, xx=xx)
+                    _models.append(_full)
+                    # For RM instruments: subtract per-sample Keplerian to get RM-only band
+                    if _is_rm_inst:
+                        from .utils.plot_publication import _compute_keplerian_from_params
+                        _kep = _compute_keplerian_from_params(xx, _p, _rm_comp)
+                        _rm_models.append(_full - _kep)
                 _models = np.array(_models)
                 model_dense_p16 = np.percentile(_models, 16, axis=0)
                 model_dense_p84 = np.percentile(_models, 84, axis=0)
+                if _is_rm_inst and _rm_models:
+                    _rm_arr = np.array(_rm_models)
+                    rm_dense_p16 = np.percentile(_rm_arr, 16, axis=0)
+                    rm_dense_p84 = np.percentile(_rm_arr, 84, axis=0)
             except Exception:
                 pass
+
+            # Per-companion RV models (for multi-companion phase-fold subtraction)
+            per_comp = {}
+            if key in ('rv', 'rv2'):
+                _i_ret = 0 if key == 'rv' else 1
+                for _comp in config.BASEMENT.settings.get('companions_rv', []):
+                    per_comp[f'model_{_comp}'] = rv_fct(params_median, inst, _comp)[_i_ret]
+                    per_comp[f'model_dense_{_comp}'] = rv_fct(params_median, inst, _comp, xx=xx)[_i_ret]
+                # Per-companion posterior bands
+                try:
+                    _nsamp_c = min(len(samples), 300)
+                    _idx_c = np.random.choice(len(samples), _nsamp_c, replace=False)
+                    _comp_models = {_comp: [] for _comp in config.BASEMENT.settings.get('companions_rv', [])}
+                    for _s in samples[_idx_c]:
+                        _p = get_params_from_samples(_s[np.newaxis, :])[0]
+                        for _comp in _comp_models:
+                            _comp_models[_comp].append(rv_fct(_p, inst, _comp, xx=xx)[_i_ret])
+                    for _comp in _comp_models:
+                        _arr = np.array(_comp_models[_comp])
+                        per_comp[f'model_dense_{_comp}_p16'] = np.percentile(_arr, 16, axis=0)
+                        per_comp[f'model_dense_{_comp}_p84'] = np.percentile(_arr, 84, axis=0)
+                except Exception:
+                    pass
 
             fname = os.path.join(modeldir, f'{prefix}_{inst}.npz')
             np.savez(fname,
@@ -1133,7 +1183,10 @@ def save_modelfiles(samples, prefix):
                      baseline_dense=baseline_dense,
                      stellar_var_dense=stellar_var_dense,
                      model_dense_p16=model_dense_p16,
-                     model_dense_p84=model_dense_p84)
+                     model_dense_p84=model_dense_p84,
+                     **(dict(rm_dense_p16=rm_dense_p16, rm_dense_p84=rm_dense_p84)
+                        if rm_dense_p16 is not None else {}),
+                     **per_comp)
             logprint(f"  Saved modelfile: {fname}")
         except Exception as e:
             logprint(f"  WARNING: save_modelfiles failed for {inst} – {e}")
