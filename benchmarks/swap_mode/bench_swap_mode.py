@@ -15,7 +15,7 @@ from scipy.special import logsumexp
 import emcee
 
 import sys, os
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
 from allesfast.mcmc.demcpt import DEMCPTSampler
 
 
@@ -95,7 +95,7 @@ def run_demcpt(logpost, ndim, p0, nsteps, ntemps, swap_mode, seed=42):
 
 
 # ---- emcee runner ----------------------------------------------------------
-def run_emcee(logpost, ndim, p0, nsteps, seed=42):
+def run_emcee(logpost, ndim, p0, nsteps, seed=42, moves=None, label=None):
     nwalkers = max(2 * ndim, 10)
     # make even
     if nwalkers % 2 == 1:
@@ -103,7 +103,7 @@ def run_emcee(logpost, ndim, p0, nsteps, seed=42):
     rng = np.random.default_rng(seed)
     p0_ens = p0 + 0.1 * rng.standard_normal((nwalkers, ndim))
 
-    sampler = emcee.EnsembleSampler(nwalkers, ndim, logpost)
+    sampler = emcee.EnsembleSampler(nwalkers, ndim, logpost, moves=moves)
     t0 = time.perf_counter()
     sampler.run_mcmc(p0_ens, nsteps, progress=False)
     elapsed = time.perf_counter() - t0
@@ -140,10 +140,19 @@ if __name__ == '__main__':
         print_row(f'demcpt-{mode[:5]}',  res,
                   f" | modes={'YES' if found else 'NO'} ({f1:.0%}/{f2:.0%})")
 
-    res = run_emcee(log_bimodal, NDIM, p0_bm, 4000)
-    found, f1, f2 = check_bimodal(res['flat'])
-    print_row('emcee', res,
-              f" | modes={'YES' if found else 'NO'} ({f1:.0%}/{f2:.0%})")
+    # emcee with different moves
+    emcee_moves = [
+        ('emcee-stretch', None),
+        ('emcee-DE', emcee.moves.DEMove()),
+        ('emcee-DESnooker', emcee.moves.DESnookerMove()),
+        ('emcee-DE+Snooker', [(emcee.moves.DEMove(), 0.8),
+                               (emcee.moves.DESnookerMove(), 0.2)]),
+    ]
+    for label, moves in emcee_moves:
+        res = run_emcee(log_bimodal, NDIM, p0_bm, 4000, moves=moves)
+        found, f1, f2 = check_bimodal(res['flat'])
+        print_row(label, res,
+                  f" | modes={'YES' if found else 'NO'} ({f1:.0%}/{f2:.0%})")
 
     # --- Test 2: Rosenbrock banana ---
     print("\n--- Test 2: Rosenbrock banana (2D) ---\n")
@@ -154,9 +163,10 @@ if __name__ == '__main__':
         mx, my = res['flat'][:, 0].mean(), res['flat'][:, 1].mean()
         print_row(f'demcpt-{mode[:5]}', res, f" | mean=({mx:.2f}, {my:.2f})")
 
-    res = run_emcee(log_rosenbrock, 2, p0_r, 5000)
-    mx, my = res['flat'][:, 0].mean(), res['flat'][:, 1].mean()
-    print_row('emcee', res, f" | mean=({mx:.2f}, {my:.2f})")
+    for label, moves in emcee_moves:
+        res = run_emcee(log_rosenbrock, 2, p0_r, 5000, moves=moves)
+        mx, my = res['flat'][:, 0].mean(), res['flat'][:, 1].mean()
+        print_row(label, res, f" | mean=({mx:.2f}, {my:.2f})")
 
     # --- Test 3: Correlated Gaussian 20D ---
     print("\n--- Test 3: Correlated Gaussian (20D) ---\n")
@@ -172,8 +182,9 @@ if __name__ == '__main__':
         res = run_demcpt(log_corr_gauss, ndim20, p0_20, 5000, 8, mode)
         print_row(f'demcpt-{mode[:5]}', res)
 
-    res = run_emcee(log_corr_gauss, ndim20, p0_20, 5000)
-    print_row('emcee', res)
+    for label, moves in emcee_moves:
+        res = run_emcee(log_corr_gauss, ndim20, p0_20, 5000, moves=moves)
+        print_row(label, res)
 
     print("\n" + "=" * 75)
     print("Done.")
