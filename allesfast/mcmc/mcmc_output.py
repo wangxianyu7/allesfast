@@ -389,9 +389,10 @@ def mcmc_output(datadir, quiet=False):
                     pass
     
     #::: plot the chains
-    fig, axes = plot_MCMC_chains(reader)
-    fig.savefig( os.path.join(config.BASEMENT.outdir,'mcmc_chains.pdf'), bbox_inches='tight' )
-    plt.close(fig)
+    if config.BASEMENT.settings.get('plot_chains', True):
+        fig, axes = plot_MCMC_chains(reader)
+        fig.savefig( os.path.join(config.BASEMENT.outdir,'mcmc_chains.pdf'), bbox_inches='tight' )
+        plt.close(fig)
 
     #::: plot the 1-D posterior distributions
     fig, axes = plot_MCMC_posteriors(reader)

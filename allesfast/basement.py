@@ -444,6 +444,14 @@ class Basement():
             self.settings['cornerplot'] = False
 
         #::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+        #::: plot_chains
+        #::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+        if ('plot_chains' in self.settings.keys()) and len(self.settings['plot_chains']):
+            self.settings['plot_chains'] = set_bool(self.settings['plot_chains'])
+        else:
+            self.settings['plot_chains'] = True
+
+        #::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
         if 'use_tidal_eccentricity_prior' in self.settings:
             self.settings['use_tidal_eccentricity_prior'] = set_bool(self.settings['use_tidal_eccentricity_prior'] )
         else:
