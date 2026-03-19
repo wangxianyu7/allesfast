@@ -732,6 +732,10 @@ def _plot_transit(ax_top, ax_bot, d, period, epoch, t14_hrs=None,
     yerr        = yerr[mask]
     resid       = resid[mask]
     phase_d_hrs = phase_d_hrs[mask_d]
+
+    # If no data falls in the transit window, skip
+    if len(y) == 0:
+        return False
     model_dense = d['model_dense'][mask_d]
 
     # Sort dense model by phase for a clean curve
@@ -763,6 +767,24 @@ def _plot_transit(ax_top, ax_bot, d, period, epoch, t14_hrs=None,
             p84_m = np.asarray(p84)[mask_d][idx_d]
             ax_top.fill_between(phase_d_hrs[idx_d], p16_m, p84_m,
                                 color='k', alpha=0.1, zorder=1)
+    # Set y-axis limits using model depth + sigma-clipped noise (notes.txt method).
+    # This avoids outlier-driven y-axis expansion.
+    _mod_vis = model_dense[idx_d] if len(idx_d) > 0 else model_dense
+    if len(_mod_vis) > 0 and len(resid) > 0:
+        _depth = 1.0 - np.nanmin(_mod_vis)
+        _resid_vals = resid[np.isfinite(resid)]
+        # Iterative sigma-clip to get robust noise estimate
+        for _ in range(10):
+            if len(_resid_vals) < 3:
+                break
+            _mu = np.mean(_resid_vals)
+            _sig = np.std(_resid_vals)
+            _resid_vals = _resid_vals[np.abs(_resid_vals - _mu) < 3 * _sig]
+        _noise = np.std(_resid_vals) if len(_resid_vals) > 0 else 0.001
+        _ylim_lo = min(1.0 - 3 * _noise - _depth, 1.0 - 3 * _noise - _depth * 1.1)
+        _ylim_hi = max(1.0 + 3 * _noise, 1.0 + 3 * _noise + _depth * 0.1)
+        ax_top.set_ylim(_ylim_lo, _ylim_hi)
+
     ax_top.set_ylabel('Relative Flux', fontsize=20, fontweight='bold')
     if inst_label:
         ax_top.text(0.5, 0.97, short_label, transform=ax_top.transAxes,
@@ -1050,8 +1072,19 @@ def make_summary_plot(
     def _avail(inst):
         return os.path.exists(os.path.join(modeldir, f'{prefix}_{inst}.npz'))
 
+    def _has_transit_coverage(inst):
+        """Check if instrument has data within the transit window."""
+        fpath = os.path.join(modeldir, f'{prefix}_{inst}.npz')
+        if not os.path.exists(fpath):
+            return False
+        d = np.load(fpath)
+        ph = _phase_fold(d['time'], period, epoch)
+        ph_hrs = ph * period * 24.
+        _xlim = t14_hrs * 0.7 if t14_hrs is not None and np.isfinite(t14_hrs) else 4.0
+        return np.any(np.abs(ph_hrs) <= _xlim)
+
     if phot_insts is None:
-        phot_insts = [i for i in s_phot if _avail(i)] if _is_transiting else []
+        phot_insts = [i for i in s_phot if _avail(i) and _has_transit_coverage(i)] if _is_transiting else []
     if rv_insts is None:
         rv_insts = [i for i in s_rv if i not in rm_set and _avail(i)]
     if rm_insts is None:
@@ -1146,14 +1179,15 @@ def make_summary_plot(
         if ptype == 'sed':
             _plot_sed(ax_top, ax_bot, mf['sed'])
         elif ptype == 'phot':
-            _plot_transit(ax_top, ax_bot, mf[pval], period, epoch,
+            _has_data = _plot_transit(ax_top, ax_bot, mf[pval], period, epoch,
                           t14_hrs=t14_hrs, inst_label=pval,
                           bin_minutes=bin_phot_minutes,
                           transit_index=transit_count,
                           posterior_curves=post.get(pval))
             transit_count += 1
-            transit_axes_top.append(ax_top)
-            transit_axes_bot.append(ax_bot)
+            if _has_data is not False:
+                transit_axes_top.append(ax_top)
+                transit_axes_bot.append(ax_bot)
         elif ptype == 'rv':
             _plot_rv_phased(ax_top, ax_bot, mf, pval, period, epoch,
                             posterior_curves=post.get('_rv_combined'),
