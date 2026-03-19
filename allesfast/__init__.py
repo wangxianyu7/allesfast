@@ -133,8 +133,22 @@ class allesclass():
             
         
     
+    #::: save modelfiles independently
+
+    def save_modelfiles(self, prefix='mcmc'):
+        '''
+        Save model npz files without rerunning the full MCMC output.
+
+        Parameters
+        ----------
+        prefix : str
+            'mcmc', 'ns', or 'initial_guess'
+        '''
+        general_output.save_modelfiles(self.posterior_samples, prefix)
+
+
     #::: plot
-    
+
     def plot(self, inst, companion, style, 
              fig=None, ax=None, mode='posterior', Nsamples=20, samples=None, dt=None, 
              zoomwindow=8., force_binning=False,
