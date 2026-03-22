@@ -127,7 +127,7 @@ _DEFAULT_BETA_IP_KMS = 2.5   # conservative default for unlisted instruments
 def setup_transit_models(basement=None):
     """
     Create one RoadRunnerModel per photometric instrument and call set_data()
-    once with that instrument's fixed time array / cadence info.
+    once with that instrument's fixed time array and supersampling from settings.
 
     After this, likelihood evaluations only need tm.evaluate() — no more
     repeated set_data() calls inside the hot loop.
@@ -143,24 +143,16 @@ def setup_transit_models(basement=None):
         basement = config.BASEMENT
     _tm_models = {}
     for inst in basement.settings['inst_phot']:
-        xx      = basement.data[inst]['time']
-        cadence = basement.data[inst]['custom_series']
-
-        lcids          = np.zeros_like(cadence, dtype=int)
-        cadence_unique = np.unique(cadence).astype(int)
-        for i, cu in enumerate(cadence_unique):
-            lcids[cadence == cu] = i
-
-        exptimes = list(cadence_unique / 24 / 3600)
-        nsamples = list(np.maximum(np.round(cadence_unique / 120).astype(int), 1))
-        # zero out exptimes for single-sample bins (no oversampling needed)
-        exptimes = [0.0 if n == 1 else e for e, n in zip(exptimes, nsamples)]
+        xx    = basement.data[inst]['time']
+        t_exp = basement.settings['t_exp_'+inst]
+        n_int = basement.settings['t_exp_n_int_'+inst]
 
         tm_inst = RoadRunnerModel('quadratic')
-        if np.sum(cadence) == 0 or len(cadence) != len(xx):
-            tm_inst.set_data(xx)
+        if n_int is not None and n_int > 1 and t_exp is not None and t_exp > 0:
+            _lcids = np.zeros(len(xx), dtype=int)
+            tm_inst.set_data(xx, lcids=_lcids, nsamples=[n_int], exptimes=[t_exp])
         else:
-            tm_inst.set_data(xx, lcids=lcids, nsamples=nsamples, exptimes=exptimes)
+            tm_inst.set_data(xx)
 
         _tm_models[inst] = tm_inst
 
@@ -633,24 +625,9 @@ def flux_subfct_ellc(params, inst, companion, xx=None, settings=None, t_exp=None
     # ind_ecl1, ind_ecl2, ind_out = index_eclipses_smart(xx, params[companion+'_epoch'], params[companion+'_period'], params[companion+'_rr'], params[companion+'_rsuma'], params[companion+'_cosi'], params[companion+'_f_s'], params[companion+'_f_c'], extra_factor=1.5)
     #TODO: possible future speed improvement
         
-    # custom_series
-    cadence = config.BASEMENT.data[inst]['custom_series']
-    lcids = np.zeros_like(cadence)
-    cadence_unique = np.unique(cadence).astype(int)
-    for i in range(len(cadence_unique)):
-        lcids[cadence == cadence_unique[i]] = i
-    lcids = lcids.astype(int)
-    exptimes = cadence_unique/24/3600
-    nsamples = np.round(cadence_unique/120).astype(int)
-    nsamples[nsamples == 0] = 1
-    exptimes[nsamples == 1] = 0
-    exptimes = list(exptimes)
-    nsamples = list(nsamples)
-    #print(exptimes,nsamples,cadence_unique, len(cadence), len(xx))
-
-    #-------------------------------------------------------------------------- 
+    #--------------------------------------------------------------------------
     #::: if: planet and EB lightcurve model
-    #-------------------------------------------------------------------------- 
+    #--------------------------------------------------------------------------
     if (params[companion+'_rr'] is not None) and (params[companion+'_rr'] > 0):
         k = params[companion+'_rr']
         ldc = params['A_ldc_'+inst]
@@ -667,18 +644,16 @@ def flux_subfct_ellc(params, inst, companion, xx=None, settings=None, t_exp=None
         e = secosw**2+sesinw**2
         w = np.mod( np.arctan2(sesinw, secosw), 2*np.pi)
 
-
-
         # Use the pre-initialised model when xx matches the stored data (MCMC hot loop).
         # Fall back to a temporary model for custom time grids (e.g. plotting).
         _data_xx = config.BASEMENT.data[inst]['time']
         if inst in _tm_models and len(xx) == len(_data_xx) and xx is _data_xx:
             _tm = _tm_models[inst]
         else:
+            # Build a temporary model for custom time grids (e.g. plotting).
+            # Use t_exp / n_int from settings only (not custom_series).
             _tm = RoadRunnerModel('quadratic')
-            if len(cadence) == len(xx) and np.sum(cadence) > 0:
-                _tm.set_data(xx, lcids=lcids, nsamples=nsamples, exptimes=exptimes)
-            elif t_exp is not None and n_int is not None and n_int > 1:
+            if t_exp is not None and n_int is not None and n_int > 1:
                 _lcids = np.zeros(len(xx), dtype=int)
                 _tm.set_data(xx, lcids=_lcids, nsamples=[n_int], exptimes=[t_exp])
             else:
@@ -1632,9 +1607,9 @@ def calculate_lnlike_total(params, debug=False):
         return -np.inf
     
     
-    #--------------------------------------------------------------------------  
+    #--------------------------------------------------------------------------
     #::: for all instruments
-    #--------------------------------------------------------------------------   
+    #--------------------------------------------------------------------------
     for key, key2 in zip(['flux', 'rv', 'rv2'], ['inst_phot', 'inst_rv', 'inst_rv2']):      
         """
         Fitting detached binaries (with rv2 and inst_rv2) only works under the following conditions:
@@ -1927,10 +1902,10 @@ def calculate_yerr_w(params, inst, key):
 #::: calculate model
 ###############################################################################      
 def calculate_model(params, inst, key, xx=None, settings=None):
-            
+
     if settings is None:
         settings = config.BASEMENT.settings
-    
+
     if key=='flux':
         depth = 0.
         for companion in settings['companions_phot']:
