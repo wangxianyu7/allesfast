@@ -200,7 +200,12 @@ def hirano2011_rm(bjd, tp, period, e, omega, inc, ar, p, u1, u2, vsini, lam, vga
     sin_thetas = np.sqrt(np.maximum(0.0, r2))
 
     sigma_max = max(5.0 / (vsini_kms + zeta_kms + 0.1), 0.01)
-    sigma_array = np.logspace(-6, np.log10(sigma_max), 101)
+    # For high vsini the Bessel function J0(2πσ·vsini·t) oscillates rapidly,
+    # requiring a uniform σ grid dense enough to resolve ~vsini/(vsini+ζ)
+    # oscillation cycles.  Linear spacing resolves all cycles equally;
+    # 201 points suffice up to vsini ≈ 100 km/s (≲10 cycles in [0, σ_max]).
+    n_sigma = max(201, int(40 * vsini_kms * sigma_max) + 1)
+    sigma_array = np.linspace(1e-8, sigma_max, n_sigma)
     m_array = _compute_m_array(sigma_array, vsini_kms, u1, u2, zeta_kms)
 
     delta_v = _rm_delta_v(
