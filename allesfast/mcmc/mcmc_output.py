@@ -141,6 +141,8 @@ def plot_MCMC_posteriors(sampler):
     Each walker/chain is drawn as a thin coloured KDE curve so mixing
     quality is immediately visible.  A thick red line shows the combined
     posterior from all chains.
+
+    Derived parameters (Mstar, age) are appended when available.
     """
     from scipy.stats import gaussian_kde
 
@@ -150,7 +152,42 @@ def plot_MCMC_posteriors(sampler):
     chain = sampler.get_chain(discard=discard)
     nsteps, nwalkers, ndim = chain.shape
 
-    n_panels = ndim
+    # Build list of (label, per-chain arrays) for all panels
+    panels = []
+    for i in range(ndim):
+        panels.append((str(config.BASEMENT.fitkeys[i]),
+                        [chain[:, w, i] for w in range(nwalkers)]))
+
+    # Add derived Mstar if logmstar is fitted
+    if 'A_logmstar' in config.BASEMENT.fitkeys:
+        idx = list(config.BASEMENT.fitkeys).index('A_logmstar')
+        panels.append(('A_mstar (Msun)',
+                        [10**chain[:, w, idx] for w in range(nwalkers)]))
+
+    # Add derived age if A_eep, A_logmstar, A_initfeh are all fitted
+    _has_age_inputs = all(k in config.BASEMENT.fitkeys
+                          for k in ['A_eep', 'A_logmstar', 'A_initfeh'])
+    if _has_age_inputs:
+        try:
+            from ..star.massradius_mist import get_mistage
+            idx_eep = list(config.BASEMENT.fitkeys).index('A_eep')
+            idx_lm  = list(config.BASEMENT.fitkeys).index('A_logmstar')
+            idx_feh = list(config.BASEMENT.fitkeys).index('A_initfeh')
+            age_chains = []
+            for w in range(nwalkers):
+                ages_w = np.array([
+                    get_mistage(eep=chain[s, w, idx_eep],
+                                mstar=10**chain[s, w, idx_lm],
+                                feh=chain[s, w, idx_feh])
+                    for s in range(0, nsteps, max(1, nsteps // 200))  # subsample
+                ])
+                ages_w = ages_w[np.isfinite(ages_w)]
+                age_chains.append(ages_w)
+            panels.append(('A_age (Gyr)', age_chains))
+        except Exception:
+            pass
+
+    n_panels = len(panels)
     ncols = 2
     nrows = int(np.ceil(n_panels / ncols))
     fig, axes = plt.subplots(nrows, ncols, figsize=(12, 3.5 * nrows))
@@ -159,20 +196,22 @@ def plot_MCMC_posteriors(sampler):
     # colour cycle for individual chains
     cmap = plt.cm.get_cmap('tab20', nwalkers)
 
-    for i in range(ndim):
+    for i, (label, chain_list) in enumerate(panels):
         ax = axf[i]
-        all_vals = chain[:, :, i].flatten()
+        all_vals = np.concatenate(chain_list)
+        if len(all_vals) == 0:
+            ax.set(title=label)
+            continue
         xmin, xmax = np.percentile(all_vals, [0.5, 99.5])
         xgrid = np.linspace(xmin, xmax, 200)
 
         # per-chain KDE
-        for w in range(nwalkers):
-            vals_w = chain[:, w, i]
-            if np.std(vals_w) == 0:
+        for w, vals_w in enumerate(chain_list):
+            if len(vals_w) < 3 or np.std(vals_w) == 0:
                 continue
             try:
                 kde_w = gaussian_kde(vals_w)
-                ax.plot(xgrid, kde_w(xgrid), color=cmap(w), alpha=0.3, lw=0.5)
+                ax.plot(xgrid, kde_w(xgrid), color=cmap(w % 20), alpha=0.3, lw=0.5)
             except Exception:
                 pass
 
@@ -181,7 +220,9 @@ def plot_MCMC_posteriors(sampler):
             kde_all = gaussian_kde(all_vals)
             ax.plot(xgrid, kde_all(xgrid), color='red', lw=2.0)
 
-        ax.set(title=config.BASEMENT.fitkeys[i], ylabel='Probability', yticks=[])
+        ax.set_title(label, fontsize=10)
+        ax.set_ylabel('Density', fontsize=7)
+        ax.tick_params(axis='both', labelsize=8)
 
     for j in range(n_panels, len(axf)):
         axf[j].set_visible(False)

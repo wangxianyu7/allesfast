@@ -475,6 +475,11 @@ class Basement():
         else:
             self.settings['use_sed_prior'] = False
 
+        if 'fit_sed_only' in self.settings:
+            self.settings['fit_sed_only'] = set_bool(self.settings['fit_sed_only'])
+        else:
+            self.settings['fit_sed_only'] = False
+
         if ('midtimes_file' not in self.settings) or (str(self.settings['midtimes_file']).lower() == 'none') or (len(str(self.settings['midtimes_file'])) == 0):
             self.settings['midtimes_file'] = None
 
@@ -511,8 +516,8 @@ class Basement():
             self.settings['mcmc_pre_run_loops'] = 0
         if 'mcmc_pre_run_steps' not in self.settings: 
             self.settings['mcmc_pre_run_steps'] = 0
-        if 'mcmc_nwalkers' not in self.settings: 
-            self.settings['mcmc_nwalkers'] = 100
+        if 'mcmc_nwalkers' not in self.settings:
+            self.settings['mcmc_nwalkers'] = max(2 * self.ndim, 20)
         if 'mcmc_total_steps' not in self.settings: 
             self.settings['mcmc_total_steps'] = 2000
         if 'mcmc_burn_steps' not in self.settings:
@@ -605,8 +610,8 @@ class Basement():
                 if companion+'_grid_'+inst not in self.settings: 
                     self.settings[companion+'_grid_'+inst] = 'default'
                     
-                if is_empty_or_none('A_ld_law_'+inst): 
-                    self.settings['A_ld_law_'+inst] = None
+                if is_empty_or_none('A_ld_law_'+inst):
+                    self.settings['A_ld_law_'+inst] = 'quad'
                     
                 if is_empty_or_none(companion+'_ld_law_'+inst):
                     self.settings[companion+'_ld_law_'+inst] = None

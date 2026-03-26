@@ -1608,6 +1608,12 @@ def calculate_lnlike_total(params, debug=False):
     
     
     #--------------------------------------------------------------------------
+    #::: SED-only mode: skip transit/RV likelihood
+    #--------------------------------------------------------------------------
+    if config.BASEMENT.settings.get('fit_sed_only', False):
+        return lnlike_total
+
+    #--------------------------------------------------------------------------
     #::: for all instruments
     #--------------------------------------------------------------------------
     for key, key2 in zip(['flux', 'rv', 'rv2'], ['inst_phot', 'inst_rv', 'inst_rv2']):      
