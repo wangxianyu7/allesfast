@@ -401,6 +401,27 @@ def mcmc_output(datadir, quiet=False):
         print_autocorr(reader)
 
 
+    #::: save tables and modelfiles first (fast, ensures results survive if plotting crashes)
+    posterior_samples_all = draw_mcmc_posterior_samples(reader)  # all samples
+    save_table(posterior_samples_all, 'mcmc')
+    save_latex_table(posterior_samples_all, 'mcmc')
+
+    try:
+        from .mcmc import _save_optimized_best
+        _flat_lp    = reader.get_log_prob(flat=True, discard=burnndx)
+        _flat_chain = reader.get_chain(flat=True, discard=burnndx)
+        _best_theta = _flat_chain[int(np.argmax(_flat_lp))]
+        _best_file  = os.path.join(config.BASEMENT.outdir, 'mcmc_best.csv')
+        _save_optimized_best(dict(zip(config.BASEMENT.fitkeys, _best_theta)), _best_file)
+        logprint(f'\nSaved {_best_file}')
+    except Exception as e:
+        logprint(f'\nWARNING: could not save mcmc_best.csv – {e}')
+
+    try:
+        save_modelfiles(posterior_samples_all, 'mcmc')
+    except Exception as e:
+        logprint(f'\nWARNING: save_modelfiles failed – {e}')
+
     #::: plot the fit
     posterior_samples = draw_mcmc_posterior_samples(reader, Nsamples=20) #only 20 samples for plotting
     
@@ -447,25 +468,8 @@ def mcmc_output(datadir, quiet=False):
         plt.close(fig)
 
 
-    #::: save the tables
-    posterior_samples = draw_mcmc_posterior_samples(reader) #all samples
-    save_table(posterior_samples, 'mcmc')
-    save_latex_table(posterior_samples, 'mcmc')
-
-    #::: save mcmc_best.csv — best sample from chain, params.csv-compatible
-    try:
-        from .mcmc import _save_optimized_best
-        _flat_lp    = reader.get_log_prob(flat=True, discard=burnndx)
-        _flat_chain = reader.get_chain(flat=True, discard=burnndx)
-        _best_theta = _flat_chain[int(np.argmax(_flat_lp))]
-        _best_file  = os.path.join(config.BASEMENT.outdir, 'mcmc_best.csv')
-        _save_optimized_best(dict(zip(config.BASEMENT.fitkeys, _best_theta)), _best_file)
-        logprint(f'\nSaved {_best_file}')
-    except Exception as e:
-        logprint(f'\nWARNING: could not save mcmc_best.csv – {e}')
-    
-    
     #::: derive values (using stellar parameters from params.csv or params_star.csv)
+    posterior_samples = posterior_samples_all  # reuse full samples for derivation
     stellar_row = get_stellar_row(config.BASEMENT.datadir, config.BASEMENT.params)
     if has_stellar_info(stellar_row):
         deriver.derive(posterior_samples, 'mcmc')

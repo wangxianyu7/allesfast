@@ -7,5 +7,5 @@ profiling/
 examples/
 docs/
 .pytest_cache
-benchmarks/
+Benchmarks&Verifications/
 Claude.md

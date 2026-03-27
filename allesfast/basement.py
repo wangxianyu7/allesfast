@@ -517,7 +517,7 @@ class Basement():
         if 'mcmc_pre_run_steps' not in self.settings: 
             self.settings['mcmc_pre_run_steps'] = 0
         if 'mcmc_nwalkers' not in self.settings:
-            self.settings['mcmc_nwalkers'] = max(2 * self.ndim, 20)
+            self.settings['mcmc_nwalkers'] = None  # set after load_params (needs ndim)
         if 'mcmc_total_steps' not in self.settings: 
             self.settings['mcmc_total_steps'] = 2000
         if 'mcmc_burn_steps' not in self.settings:
@@ -544,7 +544,8 @@ class Basement():
         #::: make sure these are integers
         for key in ['mcmc_nwalkers','mcmc_pre_run_loops','mcmc_pre_run_steps',
                     'mcmc_total_steps','mcmc_burn_steps','mcmc_thin_by']:
-            self.settings[key] = int(self.settings[key])
+            if self.settings[key] is not None:
+                self.settings[key] = int(self.settings[key])
             
         #::: luser proof (skip if burn_steps=0, i.e. auto-detected at runtime)
         if self.settings['mcmc_burn_steps'] > 0 and \
@@ -611,7 +612,15 @@ class Basement():
                     self.settings[companion+'_grid_'+inst] = 'default'
                     
                 if is_empty_or_none('A_ld_law_'+inst):
-                    self.settings['A_ld_law_'+inst] = 'quad'
+                    # Default quad for phot and RM instruments; None for plain RV
+                    _is_rm = any(
+                        self.settings.get(f'{c}_flux_weighted_{inst}') not in (None, False, 0, '0', 'False', 'false', '')
+                        for c in self.settings['companions_all']
+                    )
+                    if inst in self.settings['inst_phot'] or _is_rm:
+                        self.settings['A_ld_law_'+inst] = 'quad'
+                    else:
+                        self.settings['A_ld_law_'+inst] = None
                     
                 if is_empty_or_none(companion+'_ld_law_'+inst):
                     self.settings[companion+'_ld_law_'+inst] = None
@@ -1205,6 +1214,10 @@ class Basement():
                 raise ValueError('Bounds have to be "uniform", "normal" or "trunc_normal". Input from "params.csv" was "'+self.bounds[i][0]+'".')
     
         self.ndim = len(self.theta_0)                   #len(ndim)
+
+        # Deferred default: set mcmc_nwalkers now that ndim is known
+        if self.settings.get('mcmc_nwalkers') is None:
+            self.settings['mcmc_nwalkers'] = max(2 * self.ndim, 20)
 
         #==========================================================================
         #::: enforce EXOFASTv2-style hard bounds on MIST/SED parameters

@@ -262,12 +262,16 @@ def update_params(theta):
 
     #=========================================================================
     #::: inclination, per companion
+    #::: (chord → cosi conversion is deferred until after rsuma and ecc
+    #:::  are known; see below)
     #=========================================================================
     for companion in config.BASEMENT.settings['companions_all']:
-        try:
-            params[companion+'_incl'] = np.arccos( params[companion+'_cosi'] )/np.pi*180.
-        except:
-            params[companion+'_incl'] = None
+        if params.get(companion+'_chord') is None:
+            # Standard path: cosi is a direct parameter
+            try:
+                params[companion+'_incl'] = np.arccos( params[companion+'_cosi'] )/np.pi*180.
+            except:
+                params[companion+'_incl'] = None
         
        
     #=========================================================================
@@ -374,9 +378,12 @@ def update_params(theta):
                     params[obj+'_ldc_'+inst] = params[obj+'_ldc_q1_'+inst]
                     
                 elif config.BASEMENT.settings[obj+'_ld_law_'+inst] == 'quad':
-                    params[obj+'_ldc_'+inst] = q_to_u([params[obj+'_ldc_q1_'+inst],
-                                                       params[obj+'_ldc_q2_'+inst]], 
-                                                      law='quad')
+                    if params[obj+'_ldc_q1_'+inst] is not None and params[obj+'_ldc_q2_'+inst] is not None:
+                        params[obj+'_ldc_'+inst] = q_to_u([params[obj+'_ldc_q1_'+inst],
+                                                           params[obj+'_ldc_q2_'+inst]],
+                                                          law='quad')
+                    else:
+                        params[obj+'_ldc_'+inst] = None
                     
                 elif config.BASEMENT.settings[obj+'_ld_law_'+inst] == 'sing':
                     params[obj+'_ldc_'+inst] = q_to_u([params[obj+'_ldc_q1_'+inst], 
@@ -455,6 +462,69 @@ def update_params(theta):
             params['jitter_'+key+'_'+inst] = np.exp( params['ln_jitter_'+key+'_'+inst] )
         
         
+    #=========================================================================
+    #::: VeVc → e, ω → f_c, f_s  (transit-only parameterization)
+    #=========================================================================
+    for companion in config.BASEMENT.settings['companions_all']:
+        if params.get(companion+'_vcve') is not None:
+            vcve  = params[companion+'_vcve']
+            lsinw = params.get(companion+'_lsinw', 0.0)
+            lcosw = params.get(companion+'_lcosw', 1.0)
+            omega = np.arctan2(lsinw, lcosw)              # radians
+
+            # Solve quadratic:  a·e² + b·e + c = 0
+            sinw = np.sin(omega)
+            a_qe = vcve**2 * sinw**2 + 1.0
+            b_qe = 2.0 * vcve**2 * sinw
+            c_qe = vcve**2 - 1.0
+            disc = b_qe**2 - 4.0*a_qe*c_qe
+            if disc < 0:
+                disc = 0.0
+            epos = (-b_qe + np.sqrt(disc)) / (2.0*a_qe)
+            eneg = (-b_qe - np.sqrt(disc)) / (2.0*a_qe)
+
+            # Pick solution using L = lsinw² + lcosw² (EXOFASTv2 convention)
+            L = lsinw**2 + lcosw**2
+            ecc = eneg if L >= 0.5 else epos
+            if not (0 <= ecc < 1):
+                ecc = epos if 0 <= epos < 1 else 0.0
+
+            params[companion+'_f_c'] = np.sqrt(ecc) * np.cos(omega)
+            params[companion+'_f_s'] = np.sqrt(ecc) * np.sin(omega)
+
+    #=========================================================================
+    #::: chord → cosi → incl (transit-only parameterization)
+    #::: Deferred from above because it needs rsuma (Kepler 3rd law) and ecc
+    #::: chord = sqrt((1+rr)² - b²), b = a/Rs * cosi * (1-e²)/(1+e·sinω)
+    #=========================================================================
+    for companion in config.BASEMENT.settings['companions_all']:
+        if params.get(companion+'_chord') is not None:
+            chord = params[companion+'_chord']
+            rr = params[companion+'_rr']
+            ecc = params[companion+'_f_s']**2 + params[companion+'_f_c']**2
+            esinw = params[companion+'_f_s'] * np.sqrt(ecc) if ecc > 0 else 0.0
+            # Actually esinw = f_s * sqrt(f_s²+f_c²) / sqrt(f_s²+f_c²) = f_s... no.
+            # esinw = e * sin(omega) = (f_s² + f_c²) * sin(atan2(f_s, f_c))
+            # But simpler: esinw = sqrt(e) * sin(w) * sqrt(e) = e*sinw
+            # and f_s = sqrt(e)*sin(w), so esinw = f_s * sqrt(f_s²+f_c²) ... no
+            # esinw = e*sin(w), and f_s = sqrt(e)*sin(w), so esinw = f_s² + f_s*f_c*...
+            # Actually: e*sin(w) = (sqrt(e)*sin(w)) * sqrt(e) = f_s * sqrt(ecc)
+            esinw = params[companion+'_f_s'] * np.sqrt(ecc) if ecc > 0 else 0.0
+
+            b_sq = (1.0 + rr)**2 - chord**2
+            if b_sq < 0:
+                b_sq = 0.0
+            b_imp = np.sqrt(b_sq)
+
+            # cosi = b / (a/Rs * (1-e²)/(1+e·sinω))
+            rsuma = params.get(companion+'_rsuma')
+            if rsuma is not None and rsuma > 0:
+                ar = (1.0 + rr) / rsuma
+                ecc_factor = (1.0 - ecc**2) / (1.0 + esinw) if ecc < 1 else 1.0
+                cosi = b_imp / (ar * ecc_factor)
+                params[companion+'_cosi'] = np.clip(cosi, 0.0, 1.0)
+                params[companion+'_incl'] = np.arccos(params[companion+'_cosi']) / np.pi * 180.0
+
     #=========================================================================
     #::: semi-major axes, per companion
     #=========================================================================
@@ -1488,6 +1558,38 @@ def calculate_external_priors(params, debug=False):
             lnp = -np.inf
             
             
+    #::: VeVc Jacobian correction (transit-only eccentricity parameterization)
+    # Corrects uniform (vcve, omega) prior to uniform (e, omega) prior.
+    # |d(vcve)/de| = |(-sinω - e) / (sqrt(1-e²) · (1+e·sinω)²)|
+    # Following EXOFASTv2: determinant *= |d(vcve)/de|
+    # In log-posterior: lnp -= ln|d(vcve)/de|
+    for companion in config.BASEMENT.settings['companions_all']:
+        if params.get(companion+'_vcve') is not None:
+            ecc = params[companion+'_ecc']
+            omega = np.arctan2(params[companion+'_f_s'], params[companion+'_f_c'])
+            if 0 < ecc < 1:
+                dvcve_de = abs((-np.sin(omega) - ecc) /
+                               (np.sqrt(1.0 - ecc**2) * (1.0 + ecc*np.sin(omega))**2))
+                if dvcve_de > 0:
+                    lnp -= np.log(dvcve_de)
+
+    #::: Chord Jacobian correction (transit-only inclination parameterization)
+    # Corrects uniform chord prior to uniform cosi prior.
+    # |d(chord)/d(cosi)| = b² / (cosi · chord)
+    # Following EXOFASTv2: determinant *= |d(chord)/d(cosi)|
+    # In log-posterior: lnp -= ln|d(chord)/d(cosi)|
+    for companion in config.BASEMENT.settings['companions_all']:
+        if params.get(companion+'_chord') is not None:
+            cosi = params.get(companion+'_cosi', 0.0)
+            chord = params[companion+'_chord']
+            rr = params[companion+'_rr']
+            b_sq = (1.0 + rr)**2 - chord**2
+            if b_sq > 0 and cosi > 0 and chord > 0:
+                b_imp = np.sqrt(b_sq)
+                dchord_dcosi = b_imp**2 / (cosi * chord)
+                if dchord_dcosi > 0:
+                    lnp -= np.log(dchord_dcosi)
+
     #::: constrain dilution to avoid ellc crashes
     for inst in config.BASEMENT.settings['inst_all']:
         if (params['dil_'+inst] > 0.999):
