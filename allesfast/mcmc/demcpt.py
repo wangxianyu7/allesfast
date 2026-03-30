@@ -87,6 +87,55 @@ def _de_proposals(pos_m, nc, ndim, gamma, scale, rng_r1, rng_r2, rng_jitter):
     return proposals
 
 @njit(cache=True)
+def _snooker_proposals(pos_m, nc, ndim, gamma_snk, rng_iz, rng_i1, rng_i2):
+    """Generate DE-Snooker proposals for all chains at one temperature level.
+
+    Following ter Braak & Vrugt (2008): project the DE step along the
+    direction from the current point to a random 'pivot' point z.
+    """
+    proposals = np.empty((nc, ndim))
+    log_facs = np.empty(nc)
+    for j in range(nc):
+        # Pick 3 distinct others: z (pivot), z1, z2
+        iz = int(rng_iz[j])
+        if iz >= j: iz += 1
+        i1 = int(rng_i1[j])
+        if i1 >= min(j, iz): i1 += 1
+        if i1 >= max(j, iz): i1 += 1
+        i2 = int(rng_i2[j])
+        if i2 >= min(j, min(iz, i1)): i2 += 1
+        if i2 >= min(max(j, iz), max(j, i1), max(iz, i1)): i2 += 1
+        if i2 >= max(j, max(iz, i1)): i2 += 1
+
+        # Direction: current - pivot
+        norm_sq = 0.0
+        for d in range(ndim):
+            norm_sq += (pos_m[j, d] - pos_m[iz, d])**2
+        norm = np.sqrt(max(norm_sq, 1e-30))
+
+        # Unit vector u = (x - z) / |x - z|
+        # Project z1, z2 onto u, then step along u
+        proj1 = 0.0
+        proj2 = 0.0
+        for d in range(ndim):
+            u_d = (pos_m[j, d] - pos_m[iz, d]) / norm
+            proj1 += u_d * pos_m[i1, d]
+            proj2 += u_d * pos_m[i2, d]
+
+        for d in range(ndim):
+            u_d = (pos_m[j, d] - pos_m[iz, d]) / norm
+            proposals[j, d] = pos_m[j, d] + u_d * gamma_snk * (proj1 - proj2)
+
+        # Metropolis factor: (ndim-1)/2 * log(|q-z|/|x-z|)
+        norm_q_sq = 0.0
+        for d in range(ndim):
+            norm_q_sq += (proposals[j, d] - pos_m[iz, d])**2
+        norm_q = np.sqrt(max(norm_q_sq, 1e-30))
+        log_facs[j] = 0.5 * (ndim - 1.0) * (np.log(norm_q) - np.log(norm))
+
+    return proposals, log_facs
+
+@njit(cache=True)
 def _stretch_proposals(pos_m, nc, ndim, a, rng_r1, rng_z):
     """Generate stretch-move proposals for all chains at one temperature level."""
     proposals = np.empty((nc, ndim))
@@ -419,7 +468,7 @@ class DEMCPTSampler:
     """
 
     def __init__(self, log_posterior, ndim, nchains=None, ntemps=1, Tf=200.0,
-                 stretch=False, stretch_fraction=0.0,
+                 stretch=False, stretch_fraction=0.5, snooker_fraction=0.0,
                  vectorize=False,
                  maxgr=1.01, mintz=1000, seed=None,
                  adapt_temps=False, adapt_halflife=1000,
@@ -440,11 +489,14 @@ class DEMCPTSampler:
         self.ntemps = ntemps
         self.stretch = stretch
         # stretch_fraction: fraction of proposals that use stretch move (0-1)
-        # stretch=True overrides to 1.0; stretch=False + fraction>0 = mixed
+        # snooker_fraction: fraction that use DE-Snooker (0-1)
+        # remainder uses DE. stretch=True overrides stretch_fraction to 1.0.
         if stretch:
             self.stretch_fraction = 1.0
         else:
             self.stretch_fraction = float(stretch_fraction)
+        self.snooker_fraction = float(snooker_fraction)
+        self.gamma_snooker = 1.7  # default snooker gamma (ter Braak & Vrugt 2008)
         self.maxgr = maxgr
         self.mintz = mintz
         self.rng = np.random.default_rng(seed)
@@ -704,8 +756,10 @@ class DEMCPTSampler:
         try:
             _bidir = (self.swap_mode == 'bidirectional')
             _sf = self.stretch_fraction
+            _snf = self.snooker_fraction
             _a = self.a_stretch
             _gamma = self.gamma
+            _gamma_snk = self.gamma_snooker
             _ntotal = nchains * ntemps  # total proposals per step
 
             for i in range(1, nsteps):
@@ -725,13 +779,21 @@ class DEMCPTSampler:
                     all_log_facs = np.zeros(_ntotal)
                     for m in range(ntemps):
                         off = m * nchains
-                        use_stretch = (_sf >= 1.0 or
-                                       (_sf > 0 and rng.random() < _sf))
-                        if use_stretch:
+                        # Choose move: stretch / snooker / DE
+                        _draw = rng.random()
+                        if _sf >= 1.0 or (_sf > 0 and _draw < _sf):
                             p, lf = _stretch_proposals(
                                 pos[:, m], nchains, ndim, _a,
                                 rng.integers(0, nchains - 1, size=nchains),
                                 rng.random(nchains))
+                            all_proposals[off:off+nchains] = p
+                            all_log_facs[off:off+nchains] = lf
+                        elif _snf > 0 and _draw < _sf + _snf:
+                            p, lf = _snooker_proposals(
+                                pos[:, m], nchains, ndim, _gamma_snk,
+                                rng.integers(0, nchains - 1, size=nchains),
+                                rng.integers(0, nchains - 2, size=nchains),
+                                rng.integers(0, nchains - 3, size=nchains))
                             all_proposals[off:off+nchains] = p
                             all_log_facs[off:off+nchains] = lf
                         else:
