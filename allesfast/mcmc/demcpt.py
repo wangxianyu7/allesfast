@@ -45,6 +45,142 @@ except ImportError:
 
 
 # ---------------------------------------------------------------------------
+#  JIT-compiled MCMC inner-loop kernels
+# ---------------------------------------------------------------------------
+
+@njit(cache=True)
+def _swap_step(pos, logp, betas, nchains, ntemps, rng_uniform, rng_log_uniform,
+               bidirectional):
+    """Parallel tempering swap step (all pairs, all chains). Returns (nswap, nattempt)."""
+    nswap = 0
+    nattempt = 0
+    idx = 0
+    for m in range(ntemps - 1):
+        for j in range(nchains):
+            if rng_uniform[idx] < 0.5:
+                nattempt += 1
+                log_alpha = ((betas[m] - betas[m + 1])
+                             * (logp[j, m + 1] - logp[j, m]))
+                if rng_log_uniform[idx] < log_alpha:
+                    nswap += 1
+                    if bidirectional:
+                        for d in range(pos.shape[2]):
+                            pos[j, m, d], pos[j, m + 1, d] = pos[j, m + 1, d], pos[j, m, d]
+                        logp[j, m], logp[j, m + 1] = logp[j, m + 1], logp[j, m]
+                    else:
+                        for d in range(pos.shape[2]):
+                            pos[j, m, d] = pos[j, m + 1, d]
+                        logp[j, m] = logp[j, m + 1]
+            idx += 1
+    return nswap, nattempt
+
+def _de_proposals(pos_m, nc, ndim, gamma, scale, rng_r1, rng_r2, rng_jitter):
+    """Generate DE proposals for all chains at one temperature level (numpy vectorized)."""
+    idx = np.arange(nc)
+    r1 = rng_r1.copy()
+    r1[r1 >= idx] += 1
+    r2 = rng_r2.copy()
+    r2[r2 >= np.minimum(idx, r1)] += 1
+    r2[r2 >= np.maximum(idx, r1)] += 1
+    jitter = (rng_jitter - 0.5) * scale / 10.0
+    proposals = pos_m + gamma * (pos_m[r1] - pos_m[r2] + jitter)
+    return proposals
+
+@njit(cache=True)
+def _stretch_proposals(pos_m, nc, ndim, a, rng_r1, rng_z):
+    """Generate stretch-move proposals for all chains at one temperature level."""
+    proposals = np.empty((nc, ndim))
+    log_facs = np.empty(nc)
+    for j in range(nc):
+        r1 = rng_r1[j]
+        if r1 >= j: r1 += 1
+        z = ((a - 1.0) * rng_z[j] + 1.0) ** 2 / a
+        for d in range(ndim):
+            proposals[j, d] = pos_m[r1, d] + z * (pos_m[j, d] - pos_m[r1, d])
+        log_facs[j] = (ndim - 1) * np.log(z)
+    return proposals, log_facs
+
+@njit(cache=True)
+def _stretch_proposals_split(pos_m, nc, ndim, a, rng_r, rng_z, first_half):
+    """Ensemble-split stretch proposals: one half proposes from the other half.
+
+    first_half=True: walkers 0..nc/2-1 propose using nc/2..nc-1 as complement
+    first_half=False: walkers nc/2..nc-1 propose using 0..nc/2-1 as complement
+    """
+    half = nc // 2
+    n_prop = half if first_half else (nc - half)
+    proposals = np.empty((n_prop, ndim))
+    log_facs = np.empty(n_prop)
+    indices = np.empty(n_prop, dtype=np.int64)  # which walker each proposal is for
+
+    for k in range(n_prop):
+        if first_half:
+            j = k                      # walker index in pos_m
+            comp_start = half          # complement is second half
+            comp_size = nc - half
+        else:
+            j = half + k
+            comp_start = 0
+            comp_size = half
+
+        r = comp_start + (rng_r[k] % comp_size)
+        z = ((a - 1.0) * rng_z[k] + 1.0) ** 2 / a
+        for d in range(ndim):
+            proposals[k, d] = pos_m[r, d] + z * (pos_m[j, d] - pos_m[r, d])
+        log_facs[k] = (ndim - 1) * np.log(z)
+        indices[k] = j
+    return proposals, log_facs, indices
+
+@njit(cache=True)
+def _accept_split(pos_m, logp_m, proposals, new_lps, log_facs, beta,
+                  rng_log_u, indices, n_prop):
+    """Accept/reject for ensemble-split proposals. Returns naccept."""
+    naccept = 0
+    for k in range(n_prop):
+        j = indices[k]
+        if np.isfinite(new_lps[k]):
+            log_alpha = beta * (new_lps[k] - logp_m[j]) + log_facs[k]
+            if rng_log_u[k] < log_alpha:
+                naccept += 1
+                for d in range(pos_m.shape[1]):
+                    pos_m[j, d] = proposals[k, d]
+                logp_m[j] = new_lps[k]
+    return naccept
+
+@njit(cache=True)
+def _accept_step(pos_m, logp_m, proposals, new_lps, log_facs, beta, rng_log_u, nc):
+    """Vectorized acceptance for one temperature level. Returns naccept."""
+    naccept = 0
+    for j in range(nc):
+        if np.isfinite(new_lps[j]):
+            log_alpha = beta * (new_lps[j] - logp_m[j]) + log_facs[j]
+            if rng_log_u[j] < log_alpha:
+                naccept += 1
+                for d in range(pos_m.shape[1]):
+                    pos_m[j, d] = proposals[j, d]
+                logp_m[j] = new_lps[j]
+    return naccept
+
+@njit(cache=True)
+def _accept_all_temps(pos, logp, all_proposals, all_new_lps, all_log_facs,
+                      betas, rng_log_u, nchains, ntemps):
+    """Accept/reject for ALL temperatures in one JIT call. Returns total naccept."""
+    naccept = 0
+    for m in range(ntemps):
+        off = m * nchains
+        for j in range(nchains):
+            idx = off + j
+            if np.isfinite(all_new_lps[idx]):
+                log_alpha = betas[m] * (all_new_lps[idx] - logp[j, m]) + all_log_facs[idx]
+                if rng_log_u[idx] < log_alpha:
+                    naccept += 1
+                    for d in range(pos.shape[2]):
+                        pos[j, m, d] = all_proposals[idx, d]
+                    logp[j, m] = all_new_lps[idx]
+    return naccept
+
+
+# ---------------------------------------------------------------------------
 #  JIT-compiled diagnostic functions
 # ---------------------------------------------------------------------------
 
@@ -283,14 +419,32 @@ class DEMCPTSampler:
     """
 
     def __init__(self, log_posterior, ndim, nchains=None, ntemps=1, Tf=200.0,
-                 stretch=False, maxgr=1.01, mintz=1000, seed=None,
+                 stretch=False, stretch_fraction=0.0,
+                 vectorize=False,
+                 maxgr=1.01, mintz=1000, seed=None,
                  adapt_temps=False, adapt_halflife=1000,
                  swap_mode='bidirectional'):
         self.logpost_func = log_posterior
+        # vectorize: if True, logpost accepts (nchains, ndim) and returns (nchains,)
+        if vectorize:
+            self._vectorized_logpost = log_posterior
+            # Wrap for scalar calls during initialization
+            def _scalar_wrap(theta):
+                result = log_posterior(theta[np.newaxis, :])[0]
+                return float(result)
+            self.logpost_func = _scalar_wrap
+        else:
+            self._vectorized_logpost = None
         self.ndim = ndim
         self.nchains = nchains or max(2 * ndim, 3)
         self.ntemps = ntemps
         self.stretch = stretch
+        # stretch_fraction: fraction of proposals that use stretch move (0-1)
+        # stretch=True overrides to 1.0; stretch=False + fraction>0 = mixed
+        if stretch:
+            self.stretch_fraction = 1.0
+        else:
+            self.stretch_fraction = float(stretch_fraction)
         self.maxgr = maxgr
         self.mintz = mintz
         self.rng = np.random.default_rng(seed)
@@ -373,34 +527,35 @@ class DEMCPTSampler:
     # ----- proposal helpers --------------------------------------------------
 
     def _de_proposals_batch(self, m, pos, scale):
-        """Generate DE proposals for ALL chains at temperature m."""
+        """Generate DE proposals for ALL chains at temperature m (vectorized)."""
         nc = self.nchains
         ndim = self.ndim
         rng = self.rng
-        proposals = np.empty((nc, ndim))
-        for j in range(nc):
-            pool = np.delete(np.arange(nc), j)
-            r1, r2 = rng.choice(pool, 2, replace=False)
-            jitter = (rng.random(ndim) - 0.5) * scale / 10.0
-            proposals[j] = (pos[j, m]
-                            + self.gamma * (pos[r1, m] - pos[r2, m] + jitter))
+        # For each chain, pick two distinct others
+        idx = np.arange(nc)
+        r1 = rng.integers(0, nc - 1, size=nc)
+        r1[r1 >= idx] += 1
+        r2 = rng.integers(0, nc - 2, size=nc)
+        r2[r2 >= np.minimum(idx, r1)] += 1
+        r2[r2 >= np.maximum(idx, r1)] += 1
+        jitter = (rng.random((nc, ndim)) - 0.5) * scale / 10.0
+        proposals = (pos[:, m]
+                     + self.gamma * (pos[r1, m] - pos[r2, m] + jitter))
         return proposals, np.zeros(nc)
 
     def _stretch_proposals_batch(self, m, pos):
-        """Generate stretch-move proposals for ALL chains at temperature m."""
+        """Generate stretch-move proposals for ALL chains at temperature m (vectorized)."""
         nc = self.nchains
         ndim = self.ndim
         rng = self.rng
         a = self.a_stretch
-        proposals = np.empty((nc, ndim))
-        log_facs = np.empty(nc)
-        for j in range(nc):
-            r1 = rng.integers(0, nc - 1)
-            if r1 >= j:
-                r1 += 1
-            z = ((a - 1.0) * rng.random() + 1.0) ** 2 / a
-            proposals[j] = pos[r1, m] + z * (pos[j, m] - pos[r1, m])
-            log_facs[j] = (ndim - 1) * np.log(z)
+        # Pick a random complement chain for each walker
+        r1 = rng.integers(0, nc - 1, size=nc)
+        idx = np.arange(nc)
+        r1[r1 >= idx] += 1
+        z = ((a - 1.0) * rng.random(nc) + 1.0) ** 2 / a
+        proposals = pos[r1, m] + z[:, None] * (pos[:, m] - pos[r1, m])
+        log_facs = (ndim - 1) * np.log(z)
         return proposals, log_facs
 
     # ----- main loop ---------------------------------------------------------
@@ -547,55 +702,61 @@ class DEMCPTSampler:
 
         pool = Pool(nworkers) if use_pool else None
         try:
+            _bidir = (self.swap_mode == 'bidirectional')
+            _sf = self.stretch_fraction
+            _a = self.a_stretch
+            _gamma = self.gamma
+            _ntotal = nchains * ntemps  # total proposals per step
+
             for i in range(1, nsteps):
                 for _thin in range(nthin):
+                    # --- temperature swaps (JIT) ---
+                    if ntemps > 1:
+                        _n_rng = (ntemps - 1) * nchains
+                        _ru = rng.random(_n_rng)
+                        _rlu = np.log(rng.random(_n_rng))
+                        _ns, _na = _swap_step(pos, logp, betas, nchains,
+                                              ntemps, _ru, _rlu, _bidir)
+                        nswap += _ns
+                        nswap_attempt += _na
+
+                    # --- generate ALL proposals across ALL temps (JIT) ---
+                    all_proposals = np.empty((_ntotal, ndim))
+                    all_log_facs = np.zeros(_ntotal)
                     for m in range(ntemps):
-
-                        if m < ntemps - 1:
-                            for j in range(nchains):
-                                if rng.random() < 0.5:
-                                    nswap_attempt += 1
-                                    if self.adapt_temps:
-                                        pair_attempt[m] += 1
-                                    log_alpha = ((betas[m] - betas[m + 1])
-                                                 * (logp[j, m + 1] - logp[j, m]))
-                                    if np.log(rng.random()) < log_alpha:
-                                        nswap += 1
-                                        if self.adapt_temps:
-                                            pair_swap[m] += 1
-                                        if self.swap_mode == 'bidirectional':
-                                            pos[j, m], pos[j, m + 1] = (
-                                                pos[j, m + 1].copy(), pos[j, m].copy())
-                                            logp[j, m], logp[j, m + 1] = (
-                                                logp[j, m + 1], logp[j, m])
-                                        else:
-                                            # unidirectional: cold adopts hot position,
-                                            # hot keeps its own (EXOFASTv2 style)
-                                            pos[j, m] = pos[j, m + 1].copy()
-                                            logp[j, m] = logp[j, m + 1]
-
-                        if self.stretch:
-                            proposals, log_facs = self._stretch_proposals_batch(
-                                m, pos)
+                        off = m * nchains
+                        use_stretch = (_sf >= 1.0 or
+                                       (_sf > 0 and rng.random() < _sf))
+                        if use_stretch:
+                            p, lf = _stretch_proposals(
+                                pos[:, m], nchains, ndim, _a,
+                                rng.integers(0, nchains - 1, size=nchains),
+                                rng.random(nchains))
+                            all_proposals[off:off+nchains] = p
+                            all_log_facs[off:off+nchains] = lf
                         else:
-                            proposals, log_facs = self._de_proposals_batch(
-                                m, pos, scale)
+                            p = _de_proposals(
+                                np.ascontiguousarray(pos[:, m]), nchains, ndim, _gamma, scale,
+                                rng.integers(0, nchains - 1, size=nchains),
+                                rng.integers(0, nchains - 2, size=nchains),
+                                rng.random((nchains, ndim)))
+                            all_proposals[off:off+nchains] = p
 
-                        nattempt += nchains
-                        if pool is not None:
-                            new_lps = np.array(pool.map(logpost, list(proposals)))
-                        else:
-                            new_lps = np.array([logpost(proposals[j])
-                                                for j in range(nchains)])
+                    # --- logp evaluation: ONE batch for all temps ---
+                    nattempt += _ntotal
+                    if pool is not None:
+                        all_new_lps = np.array(pool.map(logpost, list(all_proposals)))
+                    elif self._vectorized_logpost is not None:
+                        all_new_lps = self._vectorized_logpost(all_proposals)
+                    else:
+                        all_new_lps = np.array([logpost(all_proposals[j])
+                                                for j in range(_ntotal)])
 
-                        for j in range(nchains):
-                            if np.isfinite(new_lps[j]):
-                                log_alpha = (betas[m] * (new_lps[j] - logp[j, m])
-                                             + log_facs[j])
-                                if np.log(rng.random()) < log_alpha:
-                                    naccept += 1
-                                    pos[j, m] = proposals[j]
-                                    logp[j, m] = new_lps[j]
+                    # --- acceptance for ALL temps (JIT) ---
+                    _rlu = np.log(rng.random(_ntotal))
+                    naccept += _accept_all_temps(
+                        pos, logp, all_proposals, all_new_lps,
+                        all_log_facs, betas, _rlu, nchains, ntemps)
 
                     chain[i] = pos[:, 0]
                     log_prob[i] = logp[:, 0]
@@ -753,50 +914,56 @@ class DEMCPTSampler:
 
         pool = Pool(nworkers) if use_pool else None
         try:
+            _bidir = (self.swap_mode == 'bidirectional')
+            _sf = self.stretch_fraction
+            _a = self.a_stretch
+            _gamma = self.gamma
+
             for k in range(total_steps):
                 for _thin in range(nthin):
+                    # --- temperature swaps (JIT) ---
+                    if ntemps > 1:
+                        _n_rng = (ntemps - 1) * nchains
+                        _ru = rng.random(_n_rng)
+                        _rlu = np.log(rng.random(_n_rng))
+                        _ns, _na = _swap_step(pos, logp, betas, nchains,
+                                              ntemps, _ru, _rlu, _bidir)
+                        nswap += _ns
+                        nswap_attempt += _na
+
+                    # --- proposals + acceptance per temperature ---
                     for m in range(ntemps):
-                        if m < ntemps - 1:
-                            for j in range(nchains):
-                                if rng.random() < 0.5:
-                                    nswap_attempt += 1
-                                    if self.adapt_temps:
-                                        pair_attempt[m] += 1
-                                    log_alpha = ((betas[m] - betas[m + 1])
-                                                 * (logp[j, m + 1] - logp[j, m]))
-                                    if np.log(rng.random()) < log_alpha:
-                                        nswap += 1
-                                        if self.adapt_temps:
-                                            pair_swap[m] += 1
-                                        if self.swap_mode == 'bidirectional':
-                                            pos[j, m], pos[j, m + 1] = (
-                                                pos[j, m + 1].copy(), pos[j, m].copy())
-                                            logp[j, m], logp[j, m + 1] = (
-                                                logp[j, m + 1], logp[j, m])
-                                        else:
-                                            pos[j, m] = pos[j, m + 1].copy()
-                                            logp[j, m] = logp[j, m + 1]
+                        use_stretch = (_sf >= 1.0 or
+                                       (_sf > 0 and rng.random() < _sf))
 
-                        if self.stretch:
-                            proposals, log_facs = self._stretch_proposals_batch(m, pos)
+                        if use_stretch:
+                            proposals, log_facs = _stretch_proposals(
+                                pos[:, m], nchains, ndim, _a,
+                                rng.integers(0, nchains - 1, size=nchains),
+                                rng.random(nchains))
                         else:
-                            proposals, log_facs = self._de_proposals_batch(m, pos, scale)
+                            proposals = _de_proposals(
+                                pos[:, m], nchains, ndim, _gamma, scale,
+                                rng.integers(0, nchains - 1, size=nchains),
+                                rng.integers(0, nchains - 2, size=nchains),
+                                rng.random((nchains, ndim)))
+                            log_facs = np.zeros(nchains)
 
+                        # --- logp evaluation (Python callback) ---
                         nattempt += nchains
                         if pool is not None:
                             new_lps = np.array(pool.map(logpost, list(proposals)))
+                        elif self._vectorized_logpost is not None:
+                            new_lps = self._vectorized_logpost(proposals)
                         else:
                             new_lps = np.array([logpost(proposals[j])
                                                 for j in range(nchains)])
 
-                        for j in range(nchains):
-                            if np.isfinite(new_lps[j]):
-                                log_alpha = (betas[m] * (new_lps[j] - logp[j, m])
-                                             + log_facs[j])
-                                if np.log(rng.random()) < log_alpha:
-                                    naccept += 1
-                                    pos[j, m] = proposals[j]
-                                    logp[j, m] = new_lps[j]
+                        # --- acceptance (JIT) ---
+                        _rlu = np.log(rng.random(nchains))
+                        naccept += _accept_step(
+                            pos[:, m], logp[:, m], proposals, new_lps,
+                            log_facs, betas[m], _rlu, nchains)
 
                 i = old_steps + k
                 chain[i] = pos[:, 0]
@@ -1043,6 +1210,7 @@ class DEMCPTSampler:
             cfg.attrs["maxgr"] = self.maxgr
             cfg.attrs["mintz"] = self.mintz
             cfg.attrs["stretch"] = self.stretch
+            cfg.attrs["stretch_fraction"] = self.stretch_fraction
             cfg.attrs["adapt_temps"] = self.adapt_temps
             cfg.attrs["adapt_halflife"] = self.adapt_halflife
             cfg.create_dataset("betas", data=self.betas)
@@ -1062,13 +1230,15 @@ class DEMCPTSampler:
             maxgr = float(cfg.attrs["maxgr"])
             mintz = float(cfg.attrs["mintz"])
             stretch = bool(cfg.attrs["stretch"])
+            stretch_fraction = float(cfg.attrs.get("stretch_fraction", 0.0))
             adapt_temps = bool(cfg.attrs.get("adapt_temps", False))
             adapt_halflife = float(cfg.attrs.get("adapt_halflife", 1000))
             betas = cfg["betas"][:]
             betas_history = f["betas_history"][:] if "betas_history" in f else None
 
         sampler = cls(log_posterior, ndim=ndim, nchains=nchains,
-                      ntemps=ntemps, stretch=stretch, maxgr=maxgr, mintz=mintz,
+                      ntemps=ntemps, stretch=stretch, stretch_fraction=stretch_fraction,
+                      maxgr=maxgr, mintz=mintz,
                       adapt_temps=adapt_temps, adapt_halflife=adapt_halflife)
         sampler.betas = betas
         sampler._chain = chain
