@@ -418,6 +418,7 @@ def mcmc_output(datadir, quiet=False):
         logprint(f'\nWARNING: could not save mcmc_best.csv – {e}')
 
     try:
+        from ..general_output import save_modelfiles
         save_modelfiles(posterior_samples_all, 'mcmc')
     except Exception as e:
         logprint(f'\nWARNING: save_modelfiles failed – {e}')

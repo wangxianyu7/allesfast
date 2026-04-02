@@ -695,6 +695,9 @@ class DEMCPTSampler:
             else:
                 print(f"Initialising {nchains} chains x {ntemps} temps ...")
 
+        _n_total = nchains * ntemps
+        _n_done = 0
+        _n_retries = 0
         for j in range(nchains):
             for m in range(ntemps):
                 niter = 0
@@ -725,6 +728,14 @@ class DEMCPTSampler:
                         raise RuntimeError(
                             f"Cannot find finite logpost near p0 "
                             f"(chain {j}, temp {m})")
+                _n_done += 1
+                _n_retries += niter
+                if progress:
+                    print(f"\r  Init: {_n_done}/{_n_total} "
+                          f"(retries={_n_retries})   ",
+                          end="", flush=True)
+        if progress:
+            print()
 
         # ---- storage (cold chain only) -------------------------------------
         chain = np.empty((nsteps, nchains, ndim))
@@ -807,7 +818,10 @@ class DEMCPTSampler:
                     # --- logp evaluation: ONE batch for all temps ---
                     nattempt += _ntotal
                     if pool is not None:
-                        all_new_lps = np.array(pool.map(logpost, list(all_proposals)))
+                        _chunksize = max(1, _ntotal // (nworkers * 2))
+                        all_new_lps = np.array(pool.map(
+                            logpost, list(all_proposals),
+                            chunksize=_chunksize))
                     elif self._vectorized_logpost is not None:
                         all_new_lps = self._vectorized_logpost(all_proposals)
                     else:

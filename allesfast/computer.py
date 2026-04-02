@@ -909,32 +909,28 @@ def flux_subfct_flares(params, inst, companion, xx=None, settings=None, return_f
 
 
 #==============================================================================
-#::: flux sub-fct: ellc lightcurves piecewise (for TTVs; no phase curve)
+#::: flux sub-fct: piecewise lightcurves (for TTVs; PyTransit)
 #==============================================================================
 def flux_fct_piecewise(params, inst, companion, xx=None, settings=None):
     '''
-    ! params must be updated via update_params() before calling this function !
+    Evaluate transit model transit-by-transit with individual TTV offsets.
+    Uses PyTransit RoadRunnerModel, mirroring flux_subfct_ellc but with
+    per-transit t_zero = epoch + ttv_transit_N.
     '''
-    
-    #-------------------------------------------------------------------------- 
-    #::: defaults
-    #-------------------------------------------------------------------------- 
+
     if settings is None:
         settings = config.BASEMENT.settings
-        
+
     t_exp = settings['t_exp_'+inst]
     n_int = settings['t_exp_n_int_'+inst]
     if xx is None:
-        model_flux = np.ones_like(config.BASEMENT.data[inst]['time']) #* np.nan
+        model_flux = np.ones_like(config.BASEMENT.data[inst]['time'])
     else:
-        model_flux = np.ones_like(xx) #* np.nan
-    
-    
-    #-------------------------------------------------------------------------- 
-    #::: go through the time series transit by transit to fit for TTVs
-    #-------------------------------------------------------------------------- 
+        model_flux = np.ones_like(xx)
+
+
     for n_transit in range(len(config.BASEMENT.data[companion+'_tmid_observed_transits'])):
-        
+
         if xx is None:
             ind = config.BASEMENT.data[inst][companion+'_ind_time_transit_'+str(n_transit+1)]
             xx_piecewise = config.BASEMENT.data[inst][companion+'_time_transit_'+str(n_transit+1)]
@@ -944,74 +940,39 @@ def flux_fct_piecewise(params, inst, companion, xx=None, settings=None):
             ind = np.where( (xx>=(tmid-width/2.)) \
                           & (xx<=(tmid+width/2.)) )[0]
             xx_piecewise = xx[ind]
-        
+
         if len(xx_piecewise)>0:
-            
-            #::: FutureMax warning: one does not simply replace this with flux_subfct_ellc, because it needs the additive term after epoch
-            # model_flux_piecewise = flux_subfct_ellc(params, inst, companion, xx=xx_piecewise, settings=settings, t_exp=t_exp, n_int=n_int)
 
-            #::: planet and EB transit lightcurve model
             if (params[companion+'_rr'] is not None) and (params[companion+'_rr'] > 0):
-                model_flux_piecewise = ellc.lc(
-                                  t_obs =       xx_piecewise, 
-                                  radius_1 =    params[companion+'_radius_1'], 
-                                  radius_2 =    params[companion+'_radius_2'], 
-                                  sbratio =     params[companion+'_sbratio_'+inst], 
-                                  incl =        params[companion+'_incl'], 
-                                  light_3 =     params['dil_'+inst] / (1.-params['dil_'+inst]),
-                                  t_zero =      params[companion+'_epoch'] + params[companion+'_ttv_transit_'+str(n_transit+1)],
-                                  period =      params[companion+'_period'],
-                                  a =           params[companion+'_a'],
-                                  q =           params[companion+'_q'],
-                                  f_c =         params[companion+'_f_c'],
-                                  f_s =         params[companion+'_f_s'],
-                                  ldc_1 =       params['A_ldc_'+inst],
-                                  ldc_2 =       params[companion+'_ldc_'+inst],
-                                  gdc_1 =       params['A_gdc_'+inst],
-                                  gdc_2 =       params[companion+'_gdc_'+inst],
-                                  didt =        params['didt_'+inst], 
-                                  domdt =       params['domdt_'+inst], 
-                                  rotfac_1 =    params['A_rotfac_'+inst], 
-                                  rotfac_2 =    params[companion+'_rotfac_'+inst], 
-                                  hf_1 =        params['A_hf_'+inst], #1.5, 
-                                  hf_2 =        params[companion+'_hf_'+inst], #1.5,
-                                  bfac_1 =      params['A_bfac_'+inst],
-                                  bfac_2 =      params[companion+'_bfac_'+inst], 
-                                  heat_1 =      divide(params['A_heat_'+inst],2.),
-                                  heat_2 =      divide(params[companion+'_heat_'+inst],2.),
-                                  lambda_1 =    params.get(companion+'_lambda') if params.get(companion+'_lambda') is not None else params['A_lambda'], 
-                                  lambda_2 =    params[companion+'_lambda'], 
-                                  vsini_1 =     params['A_vsini'],
-                                  vsini_2 =     params[companion+'_vsini'], 
-                                  t_exp =       t_exp,
-                                  n_int =       n_int,
-                                  grid_1 =      settings['A_grid_'+inst],
-                                  grid_2 =      settings[companion+'_grid_'+inst],
-                                  ld_1 =        settings['A_ld_law_'+inst],
-                                  ld_2 =        settings[companion+'_ld_law_'+inst],
-                                  shape_1 =     settings['A_shape_'+inst],
-                                  shape_2 =     settings[companion+'_shape_'+inst],
-                                  spots_1 =     params['A_spots_'+inst], 
-                                  spots_2 =     params[companion+'_spots_'+inst], 
-                                  exact_grav =  settings['exact_grav'],
-                                  verbose =     False
-                                  )
-                
-                #::: and here comes an ugly hack around ellc, for those who want to fit reflected light and thermal emission separately
-                '''
-                if (companion+'_thermal_emission_amplitude_'+inst in params) and (params[companion+'_thermal_emission_amplitude_'+inst]>0):
-                    model_flux += calc_thermal_curve(params, inst, companion, xx, t_exp, n_int)
-                '''
-                
-            else:
-                model_flux_piecewise = np.ones_like(xx)
-                    
-            model_flux[ind] = model_flux_piecewise
-    
+                k    = params[companion+'_rr']
+                ldc  = params['A_ldc_'+inst]
+                p    = params[companion+'_period']
+                t0   = params[companion+'_epoch'] + params[companion+'_ttv_transit_'+str(n_transit+1)]
+                rr   = params[companion+'_rr']
+                rsuma = params[companion+'_rsuma']
+                a    = (1 + rr) / rsuma
+                i    = params[companion+'_incl']/180*np.pi
+                secosw = params[companion+'_f_c']
+                sesinw = params[companion+'_f_s']
+                e    = secosw**2 + sesinw**2
+                w    = np.mod( np.arctan2(sesinw, secosw), 2*np.pi)
 
-    #-------------------------------------------------------------------------- 
-    #::: return
-    #-------------------------------------------------------------------------- 
+                _tm = RoadRunnerModel('quadratic')
+                if t_exp is not None and n_int is not None and n_int > 1:
+                    _lcids = np.zeros(len(xx_piecewise), dtype=int)
+                    _tm.set_data(xx_piecewise, lcids=_lcids, nsamples=[n_int], exptimes=[t_exp])
+                else:
+                    _tm.set_data(xx_piecewise)
+
+                model_flux_piecewise = _tm.evaluate(k, ldc, t0, p, a, i, e, w)
+                model_flux_piecewise = 1. + ( (model_flux_piecewise-1.) * (1.-params['dil_'+inst]) )
+
+            else:
+                model_flux_piecewise = np.ones_like(xx_piecewise)
+
+            model_flux[ind] = model_flux_piecewise
+
+
     return model_flux     
 
 
