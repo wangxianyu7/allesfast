@@ -252,6 +252,68 @@ def plot_panel_transits(datadir, ax=None, insts=None, companions=None, colors=No
 
 
 ###############################################################################
+#::: TTV-aware helpers for phase-folded plots
+###############################################################################
+def _ttv_shift_x(x, inst, companion, params_median, base):
+    """
+    Return an x (time) array corrected for TTV so that phase-folding with the
+    linear ephemeris aligns each observation to its nominal transit centre.
+
+    - photometric instrument: subtract ``<companion>_ttv_transit_<N>`` for
+      every point whose nearest observed transit is N.
+    - RV instrument with ``<companion>_flux_weighted_<inst>`` enabled:
+      subtract the single ``<companion>_ttv_rm_<inst>`` offset for that
+      dataset.
+    - otherwise: return x unchanged.
+
+    Falls back silently if ``fit_ttvs`` is False or no TTV params are set.
+    """
+    if not base.settings.get('fit_ttvs', False):
+        return x
+
+    x_arr = np.asarray(x, dtype=float).copy()
+
+    if inst in base.settings.get('inst_phot', []):
+        tmids = base.data.get(companion + '_tmid_observed_transits', [])
+        if len(tmids) == 0:
+            return x_arr
+        half_win = 0.5 * float(base.settings.get('fast_fit_width', 0.5))
+        for i_global, t_mid in enumerate(tmids):
+            ttv = params_median.get(companion + '_ttv_transit_' + str(i_global + 1))
+            if ttv is None:
+                continue
+            mask = (x_arr >= t_mid - half_win) & (x_arr <= t_mid + half_win)
+            if np.any(mask):
+                x_arr[mask] = x_arr[mask] - float(ttv)
+        return x_arr
+
+    if inst in base.settings.get('inst_rv', []) + base.settings.get('inst_rv2', []):
+        fw_key = companion + '_flux_weighted_' + inst
+        if not base.settings.get(fw_key, False):
+            return x_arr
+        ttv_rm = params_median.get(companion + '_ttv_rm_' + inst)
+        if ttv_rm is None:
+            return x_arr
+        return x_arr - float(ttv_rm)
+
+    return x_arr
+
+
+def _params_without_ttv(p):
+    """
+    Return a shallow copy of params with every TTV-related entry zeroed.
+
+    Used to evaluate a *nominal* (no-TTV) model curve for phase-folded plots.
+    """
+    pp = dict(p)
+    for k in list(pp.keys()):
+        if '_ttv_transit_' in k or '_ttv_rm_' in k:
+            if pp[k] is not None:
+                pp[k] = 0.0
+    return pp
+
+
+###############################################################################
 #::: plot
 ###############################################################################
 def afplot(samples, companion):
@@ -262,50 +324,37 @@ def afplot(samples, companion):
         samples from the initial guess, or from the MCMC / Nested Sampling posteriors
     '''
 #    global config.BASEMENT
-    
-    print('Plotting collage for companion', companion+'...')
-    
-    if config.BASEMENT.settings['fit_ttvs'] is False:
-      
-        N_inst = len(config.BASEMENT.settings['inst_all'])
-        
-        if 'do_not_phase_fold' in config.BASEMENT.settings and config.BASEMENT.settings['do_not_phase_fold']:
-            fig, axes = plt.subplots(N_inst,1,figsize=(6*1,4*N_inst))
-            styles = ['full']
-        elif config.BASEMENT.settings['phase_curve']:
-            fig, axes = plt.subplots(N_inst,5,figsize=(6*5,4*N_inst))
-            styles = ['full','phase','phase_curve','phasezoom','phasezoom_occ']
-        elif config.BASEMENT.settings['secondary_eclipse']:
-            fig, axes = plt.subplots(N_inst,4,figsize=(6*4,4*N_inst))
-            styles = ['full','phase','phasezoom','phasezoom_occ']
-        else:
-            fig, axes = plt.subplots(N_inst,3,figsize=(6*3,4*N_inst))
-            styles = ['full','phase','phasezoom']
-        axes = np.atleast_2d(axes)
-        
-        for i,inst in enumerate(config.BASEMENT.settings['inst_all']):
-            for j,style in enumerate(styles):
-    #            print(i,j,inst,style)
-                #::: don't phase-fold single day photometric follow-up
-    #            if (style=='phase') & (inst in config.BASEMENT.settings['inst_phot']) & ((config.BASEMENT.data[inst]['time'][-1] - config.BASEMENT.data[inst]['time'][0]) < 1.):
-    #                axes[i,j].axis('off')
-                #::: don't zoom onto RV data (actually, let's do it, for the RM effects' sake #yolo #2fast2rm)
-                # if ('zoom' in style) & (inst in config.BASEMENT.settings['inst_rv']):
-                #     axes[i,j].axis('off')
-                #::: don't plot if the companion is not covered by an instrument
-                if (inst in config.BASEMENT.settings['inst_phot']) & (companion not in config.BASEMENT.settings['companions_phot']):
-                    axes[i,j].axis('off')
-                #::: don't plot if the companion is not covered by an instrument
-                elif (inst in config.BASEMENT.settings['inst_rv']) & (companion not in config.BASEMENT.settings['companions_rv']):
-                    axes[i,j].axis('off')
-                else:
-                    plot_1(axes[i,j], samples, inst, companion, style)
-    
-        plt.tight_layout()
-        return fig, axes
 
+    print('Plotting collage for companion', companion+'...')
+
+    N_inst = len(config.BASEMENT.settings['inst_all'])
+
+    if 'do_not_phase_fold' in config.BASEMENT.settings and config.BASEMENT.settings['do_not_phase_fold']:
+        fig, axes = plt.subplots(N_inst,1,figsize=(6*1,4*N_inst))
+        styles = ['full']
+    elif config.BASEMENT.settings['phase_curve']:
+        fig, axes = plt.subplots(N_inst,5,figsize=(6*5,4*N_inst))
+        styles = ['full','phase','phase_curve','phasezoom','phasezoom_occ']
+    elif config.BASEMENT.settings['secondary_eclipse']:
+        fig, axes = plt.subplots(N_inst,4,figsize=(6*4,4*N_inst))
+        styles = ['full','phase','phasezoom','phasezoom_occ']
     else:
-        return None, None
+        fig, axes = plt.subplots(N_inst,3,figsize=(6*3,4*N_inst))
+        styles = ['full','phase','phasezoom']
+    axes = np.atleast_2d(axes)
+
+    for i,inst in enumerate(config.BASEMENT.settings['inst_all']):
+        for j,style in enumerate(styles):
+            #::: don't plot if the companion is not covered by an instrument
+            if (inst in config.BASEMENT.settings['inst_phot']) & (companion not in config.BASEMENT.settings['companions_phot']):
+                axes[i,j].axis('off')
+            elif (inst in config.BASEMENT.settings['inst_rv']) & (companion not in config.BASEMENT.settings['companions_rv']):
+                axes[i,j].axis('off')
+            else:
+                plot_1(axes[i,j], samples, inst, companion, style)
+
+    plt.tight_layout()
+    return fig, axes
     
     
     
@@ -618,12 +667,18 @@ def plot_1(ax, samples, inst, companion, style,
     #==========================================================================
     elif style in ['phase', 'phasezoom', 'phasezoom_occ', 'phase_curve',
                    'phase_residuals', 'phasezoom_residuals', 'phasezoom_occ_residuals', 'phase_curve_residuals']:
-        
+
         #::: data - baseline_median
         x = 1.*base.data[inst]['time']
         baseline_median = calculate_baseline(params_median, inst, key) #evaluated on x (!)
         stellar_var_median = calculate_stellar_var(params_median, 'all', key, xx=x) #evaluated on x (!)
         y = base.data[inst][key] - baseline_median - stellar_var_median
+
+        # TTV-aware phase folding: shift observation times so each transit's
+        # mid-point lands on the linear ephemeris prediction.  Keplerian RV
+        # phase error from this shift is ttv/P ~ 1e-3 (negligible); the RM
+        # dip / transit centre gets correctly aligned at phase 0.
+        x = _ttv_shift_x(x, inst, companion, params_median, base)
         #::: also subtract global RV trend (A_rv_slope/A_rv_quad) so phase-folded RV shows clean Keplerian
         if inst in base.settings.get('inst_rv', []) or inst in base.settings.get('inst_rv2', []):
             _slope = params_median.get('A_rv_slope', None)
@@ -687,7 +742,10 @@ def plot_1(ax, samples, inst, companion, style,
                     s = samples[i,:]
                     p = update_params(s)
 #                    p = update_params(s, phased=True)
-                    model = rv_fct(p, inst, companion, xx=xx2)[i_return]
+                    # zero out TTV entries so the RM dip in the model lands
+                    # at phase 0 (matching TTV-shifted data)
+                    p_nom = _params_without_ttv(p) if base.settings.get('fit_ttvs', False) else p
+                    model = rv_fct(p_nom, inst, companion, xx=xx2)[i_return]
                     ax.plot( xx*zoomfactor, model, 'r-', alpha=alpha, zorder=12 )
                     #print(model, file=open(os.path.join(config.BASEMENT.outdir, 'rv_phasefolded_model_'+inst+'.txt'), 'a'))
             
@@ -758,7 +816,14 @@ def plot_1(ax, samples, inst, companion, style,
                         s = samples[i,:]
                         p = update_params(s)
     #                    p = update_params(s, phased=True)
-                        model = flux_fct(p, inst, companion, xx=xx2) #evaluated on xx (!)
+                        # For TTV mode, route to the non-piecewise model so
+                        # the phase curve shows a single canonical transit
+                        # shape centred at phase 0 (matching shifted data).
+                        if base.settings.get('fit_ttvs', False):
+                            from .computer import flux_fct_full
+                            model = flux_fct_full(p, inst, companion, xx=xx2)
+                        else:
+                            model = flux_fct(p, inst, companion, xx=xx2)
                         ax.plot( xx*zoomfactor, model, 'r-', alpha=alpha, zorder=12 )
              
         

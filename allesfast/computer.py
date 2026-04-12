@@ -91,6 +91,7 @@ from pytransit import RoadRunnerModel
 # Per-instrument transit models with data pre-loaded at initialisation.
 # set_data() is expensive; calling it once avoids repeating it on every likelihood eval.
 _tm_models = {}   # inst -> RoadRunnerModel with set_data already called
+_tm_ttv_transit_idx = {}  # inst -> ndarray of global transit indices this inst covers (fit_ttvs mode)
 
 from radvel.kepler import rv_drive
 from radvel.orbit import timetrans_to_timeperi
@@ -132,23 +133,72 @@ def setup_transit_models(basement=None):
     After this, likelihood evaluations only need tm.evaluate() — no more
     repeated set_data() calls inside the hot loop.
 
+    When ``fit_ttvs`` is enabled, each observed transit gets its own PyTransit
+    light-curve id so the whole instrument's data can be modelled in a single
+    evaluate() call with a vector t0 = [epoch + ttv_transit_1, ...].  This
+    eliminates the per-transit RoadRunnerModel instantiation and set_data()
+    overhead inside flux_fct_piecewise.
+
     Parameters
     ----------
     basement : Basement, optional
         Pass the Basement instance directly when calling during __init__
         (before config.BASEMENT is set).  Falls back to config.BASEMENT.
     """
-    global _tm_models
+    global _tm_models, _tm_ttv_transit_idx
     if basement is None:
         basement = config.BASEMENT
     _tm_models = {}
+    _tm_ttv_transit_idx = {}   # inst -> array of global transit indices present in this inst
+
+    _fit_ttvs = basement.settings.get('fit_ttvs', False)
+    _ttv_companions = basement.settings.get('companions_phot', []) if _fit_ttvs else []
+
     for inst in basement.settings['inst_phot']:
         xx    = basement.data[inst]['time']
         t_exp = basement.settings['t_exp_'+inst]
         n_int = basement.settings['t_exp_n_int_'+inst]
 
         tm_inst = RoadRunnerModel('quadratic')
-        if n_int is not None and n_int > 1 and t_exp is not None and t_exp > 0:
+
+        if _ttv_companions:
+            # TTV mode: assign each data point to its nearest observed transit.
+            # lcids must be contiguous [0..nlc-1] within this instrument — so
+            # we map each transit globally covered by this instrument to a
+            # local lc index.  At evaluate() time we rebuild t0 in the same
+            # order using _tm_ttv_transit_idx[inst].
+            companion = _ttv_companions[0]
+            tmids = basement.data.get(companion + '_tmid_observed_transits', [])
+            window = basement.settings['fast_fit_width']
+            # first pass: find which global transit indices are covered here
+            covered = []
+            for i_global, t_mid in enumerate(tmids):
+                in_tr = (xx >= t_mid - window / 2.) & (xx <= t_mid + window / 2.)
+                if np.any(in_tr):
+                    covered.append(i_global)
+            _tm_ttv_transit_idx[inst] = np.asarray(covered, dtype=int)
+            nlc = max(len(covered), 1)
+
+            # second pass: build contiguous local lcids
+            lcids = np.zeros(len(xx), dtype=int)
+            for i_local, i_global in enumerate(covered):
+                t_mid = tmids[i_global]
+                in_tr = (xx >= t_mid - window / 2.) & (xx <= t_mid + window / 2.)
+                lcids[in_tr] = i_local
+
+            nsamples = [int(n_int) if (n_int is not None and n_int > 1) else 1] * nlc
+            exptimes = [float(t_exp) if (t_exp is not None and t_exp > 0) else 0.0] * nlc
+            if len(covered) == 0:
+                # no transits covered — degenerate, but keep a valid model
+                tm_inst.set_data(xx)
+            else:
+                # epids must map each lc to a unique epoch so evaluate() picks
+                # the right t0[iep] entry. Without this, all lcs default to
+                # epids=0 → every transit uses the same t0 (bug!).
+                epids = np.arange(nlc, dtype=int)
+                tm_inst.set_data(xx, lcids=lcids, nsamples=nsamples,
+                                 exptimes=exptimes, epids=epids)
+        elif n_int is not None and n_int > 1 and t_exp is not None and t_exp > 0:
             _lcids = np.zeros(len(xx), dtype=int)
             tm_inst.set_data(xx, lcids=_lcids, nsamples=[n_int], exptimes=[t_exp])
         else:
@@ -913,67 +963,89 @@ def flux_subfct_flares(params, inst, companion, xx=None, settings=None, return_f
 #==============================================================================
 def flux_fct_piecewise(params, inst, companion, xx=None, settings=None):
     '''
-    Evaluate transit model transit-by-transit with individual TTV offsets.
-    Uses PyTransit RoadRunnerModel, mirroring flux_subfct_ellc but with
-    per-transit t_zero = epoch + ttv_transit_N.
+    Evaluate transit model across all observed transits with individual TTV offsets.
+
+    Fast path (xx is None, i.e. the MCMC hot loop): uses a pre-built
+    RoadRunnerModel cached in ``_tm_models[inst]`` with per-transit lcids.
+    A single ``evaluate()`` call with a vector ``t0 = epoch + [ttv_1,...]``
+    produces the full model at once — no loop, no per-step set_data().
+
+    Slow path (xx passed, e.g. plotting): falls back to the old per-transit
+    loop with on-the-fly RoadRunnerModel instantiation.  Only used outside
+    the MCMC hot loop so its overhead is irrelevant.
     '''
 
     if settings is None:
         settings = config.BASEMENT.settings
 
+    if (params[companion+'_rr'] is None) or (params[companion+'_rr'] <= 0):
+        base_xx = xx if xx is not None else config.BASEMENT.data[inst]['time']
+        return np.ones_like(base_xx)
+
+    tmids = config.BASEMENT.data[companion+'_tmid_observed_transits']
+    k    = params[companion+'_rr']
+    ldc  = params['A_ldc_'+inst]
+    p    = params[companion+'_period']
+    rsuma = params[companion+'_rsuma']
+    a    = (1. + k) / rsuma
+    i    = params[companion+'_incl'] / 180. * np.pi
+    secosw = params[companion+'_f_c']
+    sesinw = params[companion+'_f_s']
+    e    = secosw**2 + sesinw**2
+    w    = np.mod(np.arctan2(sesinw, secosw), 2 * np.pi)
+
+    epoch = params[companion+'_epoch']
+
+    # --- fast path: MCMC hot loop uses pre-built model with vector t0 ---
+    if xx is None:
+        tm = _tm_models.get(inst)
+        covered = _tm_ttv_transit_idx.get(inst)
+        if tm is not None and covered is not None and len(covered) > 0:
+            t0_local = np.array(
+                [epoch + params[companion+'_ttv_transit_'+str(i_global+1)]
+                 for i_global in covered],
+                dtype=float,
+            )
+            model_flux = tm.evaluate(k, ldc, t0_local, p, a, i, e, w)
+            return 1. + (model_flux - 1.) * (1. - params['dil_'+inst])
+
+    # for the slow path we still need a full-range t0 vector (one per global transit)
+    t0_vec = np.array(
+        [epoch + params[companion+'_ttv_transit_'+str(n+1)] for n in range(len(tmids))],
+        dtype=float,
+    )
+
+    # --- slow path: custom xx (plotting) or cache miss ---
+    base_xx = xx if xx is not None else config.BASEMENT.data[inst]['time']
+    model_flux = np.ones_like(base_xx)
     t_exp = settings['t_exp_'+inst]
     n_int = settings['t_exp_n_int_'+inst]
-    if xx is None:
-        model_flux = np.ones_like(config.BASEMENT.data[inst]['time'])
-    else:
-        model_flux = np.ones_like(xx)
+    width = settings['fast_fit_width']
 
-
-    for n_transit in range(len(config.BASEMENT.data[companion+'_tmid_observed_transits'])):
-
+    for n_transit, tmid in enumerate(tmids):
         if xx is None:
             ind = config.BASEMENT.data[inst][companion+'_ind_time_transit_'+str(n_transit+1)]
             xx_piecewise = config.BASEMENT.data[inst][companion+'_time_transit_'+str(n_transit+1)]
         else:
-            tmid = config.BASEMENT.data[companion+'_tmid_observed_transits'][n_transit]
-            width = settings['fast_fit_width']
-            ind = np.where( (xx>=(tmid-width/2.)) \
-                          & (xx<=(tmid+width/2.)) )[0]
+            ind = np.where((xx >= (tmid - width/2.)) & (xx <= (tmid + width/2.)))[0]
             xx_piecewise = xx[ind]
 
-        if len(xx_piecewise)>0:
+        if len(xx_piecewise) == 0:
+            continue
 
-            if (params[companion+'_rr'] is not None) and (params[companion+'_rr'] > 0):
-                k    = params[companion+'_rr']
-                ldc  = params['A_ldc_'+inst]
-                p    = params[companion+'_period']
-                t0   = params[companion+'_epoch'] + params[companion+'_ttv_transit_'+str(n_transit+1)]
-                rr   = params[companion+'_rr']
-                rsuma = params[companion+'_rsuma']
-                a    = (1 + rr) / rsuma
-                i    = params[companion+'_incl']/180*np.pi
-                secosw = params[companion+'_f_c']
-                sesinw = params[companion+'_f_s']
-                e    = secosw**2 + sesinw**2
-                w    = np.mod( np.arctan2(sesinw, secosw), 2*np.pi)
+        _tm = RoadRunnerModel('quadratic')
+        if t_exp is not None and n_int is not None and n_int > 1:
+            _lcids = np.zeros(len(xx_piecewise), dtype=int)
+            _tm.set_data(xx_piecewise, lcids=_lcids, nsamples=[n_int], exptimes=[t_exp])
+        else:
+            _tm.set_data(xx_piecewise)
 
-                _tm = RoadRunnerModel('quadratic')
-                if t_exp is not None and n_int is not None and n_int > 1:
-                    _lcids = np.zeros(len(xx_piecewise), dtype=int)
-                    _tm.set_data(xx_piecewise, lcids=_lcids, nsamples=[n_int], exptimes=[t_exp])
-                else:
-                    _tm.set_data(xx_piecewise)
+        model_flux_piecewise = _tm.evaluate(k, ldc, float(t0_vec[n_transit]),
+                                            p, a, i, e, w)
+        model_flux_piecewise = 1. + (model_flux_piecewise - 1.) * (1. - params['dil_'+inst])
+        model_flux[ind] = model_flux_piecewise
 
-                model_flux_piecewise = _tm.evaluate(k, ldc, t0, p, a, i, e, w)
-                model_flux_piecewise = 1. + ( (model_flux_piecewise-1.) * (1.-params['dil_'+inst]) )
-
-            else:
-                model_flux_piecewise = np.ones_like(xx_piecewise)
-
-            model_flux[ind] = model_flux_piecewise
-
-
-    return model_flux     
+    return model_flux
 
 
 
@@ -1196,8 +1268,13 @@ def rv_fct(params, inst, companion, xx=None, settings=None):
             with np.errstate(invalid='ignore'):  # ignore NaN values
                 return np.abs((time - T0 + half_period) % period - half_period) < 0.5 * duration
 
-        # let us use 12 hours as the duration of the transit here
-        in_transit_mask = transit_mask(xx, per1, T_tra_tot, tc1)
+        # Per-RM-dataset TTV offset: user-defined <companion>_ttv_rm_<inst>
+        # absorbs TTV on RM nights without simultaneous photometric coverage.
+        # Backward compatible: defaults to 0 (linear ephemeris).
+        _ttv_rm = params.get(companion + '_ttv_rm_' + inst)
+        _ttv_rm = 0.0 if _ttv_rm is None else float(_ttv_rm)
+
+        in_transit_mask = transit_mask(xx, per1, T_tra_tot, tc1 + _ttv_rm)
         rm = np.zeros_like(xx)
         _fw = config.BASEMENT.settings[companion+'_flux_weighted_'+inst]
         _rm_resolution = _fw if isinstance(_fw, float) and _fw > 1.0 else None
@@ -1230,7 +1307,7 @@ def rv_fct(params, inst, companion, xx=None, settings=None):
             rr = params[companion+'_rr']
             ar = (1+rr) / params[companion+'_rsuma']
             period = params[companion+'_period']
-            t0 = params[companion+'_epoch']
+            t0 = params[companion+'_epoch'] + _ttv_rm
             inc = params[companion+'_incl']
             vsini = params['A_vsini']
             # xi (vmic) and zeta (vmac): use fitted value if present in params,

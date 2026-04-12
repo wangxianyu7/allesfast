@@ -997,6 +997,12 @@ class Basement():
                 validate(companion+'_lambda', None, -np.inf, np.inf)
                 validate(companion+'_vsini', None, -np.inf, np.inf)
 
+                # Per-RM-dataset TTV offset (day). If set, rv_fct shifts the
+                # RM transit center by this offset to absorb TTV on nights
+                # that have no simultaneous photometric coverage. Falls back
+                # to linear ephemeris when unset.
+                validate(companion+'_ttv_rm_'+inst, None, -np.inf, np.inf)
+
                 #::: validate xi/zeta for RM fitting
                 _fw_key = companion+'_flux_weighted_'+inst
                 if self.settings.get(_fw_key, False):
