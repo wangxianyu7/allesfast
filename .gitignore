@@ -9,3 +9,4 @@ docs/
 .pytest_cache
 Benchmarks&Verifications/
 Claude.md
+.claude/
