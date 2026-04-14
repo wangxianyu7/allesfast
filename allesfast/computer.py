@@ -755,6 +755,17 @@ def flux_subfct_ellc(params, inst, companion, xx=None, settings=None, t_exp=None
         t0 = params[companion+'_epoch']
         rr = params[companion+'_rr']
         rsuma = params[companion+'_rsuma']
+        # Guard against invalid geometry that crashes PyTransit internally
+        # (ZeroDivisionError in rr_simple when rsuma<=0 or period<=0).  Return
+        # a flat lightcurve so the likelihood evaluates to -inf via the
+        # usual NaN/Inf check downstream.
+        if (rsuma is None) or (not np.isfinite(rsuma)) or rsuma <= 0 \
+                or p is None or (not np.isfinite(p)) or p <= 0:
+            base_xx = xx if xx is not None else config.BASEMENT.data[inst]['time']
+            _nan = np.full_like(base_xx, np.nan, dtype=float)
+            if return_fluxes:
+                return _nan, _nan, np.zeros_like(base_xx)
+            return _nan
         ar = (1 + rr) / rsuma
         a = ar
         i = params[companion+'_incl']/180*np.pi
@@ -763,6 +774,13 @@ def flux_subfct_ellc(params, inst, companion, xx=None, settings=None, t_exp=None
 
         e = secosw**2+sesinw**2
         w = np.mod( np.arctan2(sesinw, secosw), 2*np.pi)
+
+        if e >= 1.0:
+            base_xx = xx if xx is not None else config.BASEMENT.data[inst]['time']
+            _nan = np.full_like(base_xx, np.nan, dtype=float)
+            if return_fluxes:
+                return _nan, _nan, np.zeros_like(base_xx)
+            return _nan
 
         # Use the pre-initialised model when xx matches the stored data (MCMC hot loop).
         # Fall back to a temporary model for custom time grids (e.g. plotting).
@@ -781,7 +799,7 @@ def flux_subfct_ellc(params, inst, companion, xx=None, settings=None, t_exp=None
 
         model_flux1 = _tm.evaluate(k, ldc, t0, p, a, i, e, w)
         model_flux2 = np.zeros_like(xx)
-        model_flux = 1. + ( (model_flux1+model_flux2-1.) * (1.-params['dil_'+inst]) )  
+        model_flux = 1. + ( (model_flux1+model_flux2-1.) * (1.-params['dil_'+inst]) )
     #-------------------------------------------------------------------------- 
     #::: else: constant 1
     #-------------------------------------------------------------------------- 

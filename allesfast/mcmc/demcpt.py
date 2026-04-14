@@ -32,6 +32,10 @@ import numpy as np
 from multiprocessing import Pool
 import h5py
 from time import time as _timer
+try:
+    from tqdm import tqdm
+except ImportError:
+    tqdm = None
 
 try:
     from numba import njit
@@ -764,6 +768,8 @@ class DEMCPTSampler:
             print(f"Running MCMC{workers_s} ...")
 
         pool = Pool(nworkers) if use_pool else None
+        pbar = tqdm(total=nsteps - 1, desc='MCMC', disable=not (progress and tqdm is not None),
+                    mininterval=0.5, dynamic_ncols=True) if tqdm is not None else None
         try:
             _bidir = (self.swap_mode == 'bidirectional')
             _sf = self.stretch_fraction
@@ -846,6 +852,14 @@ class DEMCPTSampler:
                     betas = self.betas  # update local ref
                     betas_history[i] = betas.copy()
 
+                if pbar is not None:
+                    acc = naccept / max(nattempt, 1) * 100
+                    _post = {'acc': f'{acc:.1f}%'}
+                    if ntemps > 1 and nswap_attempt > 0:
+                        _post['swap'] = f'{nswap/nswap_attempt*100:.1f}%'
+                    pbar.set_postfix(_post, refresh=False)
+                    pbar.update(1)
+
                 if save_every > 0 and (i + 1) % save_every == 0:
                     self._chain = chain[:i + 1]
                     self._log_prob = log_prob[:i + 1]
@@ -853,13 +867,6 @@ class DEMCPTSampler:
                     self._logp_full = logp
                     self.save(save_file)
                     last_saved = i + 1
-                    if progress:
-                        pct = 100 * (i + 1) / nsteps
-                        acc = naccept / max(nattempt, 1) * 100
-                        swap_s = (f"; swap={nswap/nswap_attempt*100:.1f}%"
-                                  if ntemps > 1 and nswap_attempt > 0 else "")
-                        print(f"\r  {pct:5.1f}% | accept={acc:.1f}%{swap_s}   ",
-                              end="", flush=True)
 
                 if (i + 1) % check_every == 0 and i > 2 * nchains:
                     chi2 = -2.0 * log_prob[:i + 1]
@@ -876,12 +883,14 @@ class DEMCPTSampler:
                         if progress:
                             save_s = (f" | saved at step {last_saved}"
                                       if last_saved is not None else "")
-                            print(
-                                f"\r  {100*(i+1)/nsteps:5.1f}% | "
-                                f"accept={acc:.1f}%{swap_s} | "
-                                f"GR={max_gr:.4f} (<{self.maxgr}) | "
-                                f"Tz={min_tz:.0f} (>{self.mintz}){save_s}   ",
-                                end="", flush=True)
+                            _msg = (f"  {100*(i+1)/nsteps:5.1f}% | "
+                                    f"accept={acc:.1f}%{swap_s} | "
+                                    f"GR={max_gr:.4f} (<{self.maxgr}) | "
+                                    f"Tz={min_tz:.0f} (>{self.mintz}){save_s}")
+                            if pbar is not None:
+                                pbar.write(_msg)
+                            else:
+                                print("\r" + _msg + "   ", end="", flush=True)
 
                         if max_gr < self.maxgr and min_tz > self.mintz:
                             npass += 1
@@ -901,6 +910,8 @@ class DEMCPTSampler:
             if pool is not None:
                 pool.close()
                 pool.join()
+            if pbar is not None:
+                pbar.close()
 
         chain = chain[:final_step]
         log_prob = log_prob[:final_step]
@@ -1054,6 +1065,14 @@ class DEMCPTSampler:
                     betas = self.betas
                     betas_history[i] = betas.copy()
 
+                if pbar is not None:
+                    acc = naccept / max(nattempt, 1) * 100
+                    _post = {'acc': f'{acc:.1f}%'}
+                    if ntemps > 1 and nswap_attempt > 0:
+                        _post['swap'] = f'{nswap/nswap_attempt*100:.1f}%'
+                    pbar.set_postfix(_post, refresh=False)
+                    pbar.update(1)
+
                 if save_every > 0 and (i + 1) % save_every == 0:
                     self._chain = chain[:i + 1]
                     self._log_prob = log_prob[:i + 1]
@@ -1061,13 +1080,6 @@ class DEMCPTSampler:
                     self._logp_full = logp
                     self.save(save_file)
                     last_saved = i + 1
-                    if progress:
-                        pct = 100 * (i + 1) / nsteps
-                        acc = naccept / max(nattempt, 1) * 100
-                        swap_s = (f"; swap={nswap/nswap_attempt*100:.1f}%"
-                                  if ntemps > 1 and nswap_attempt > 0 else "")
-                        print(f"\r  {pct:5.1f}% | accept={acc:.1f}%{swap_s}   ",
-                              end="", flush=True)
 
                 if (i + 1) % check_every == 0 and i > 2 * nchains:
                     chi2 = -2.0 * log_prob[:i + 1]
@@ -1084,12 +1096,14 @@ class DEMCPTSampler:
                         if progress:
                             save_s = (f" | saved at step {last_saved}"
                                       if last_saved is not None else "")
-                            print(
-                                f"\r  {100*(i+1)/nsteps:5.1f}% | "
-                                f"accept={acc:.1f}%{swap_s} | "
-                                f"GR={max_gr:.4f} (<{self.maxgr}) | "
-                                f"Tz={min_tz:.0f} (>{self.mintz}){save_s}   ",
-                                end="", flush=True)
+                            _msg = (f"  {100*(i+1)/nsteps:5.1f}% | "
+                                    f"accept={acc:.1f}%{swap_s} | "
+                                    f"GR={max_gr:.4f} (<{self.maxgr}) | "
+                                    f"Tz={min_tz:.0f} (>{self.mintz}){save_s}")
+                            if pbar is not None:
+                                pbar.write(_msg)
+                            else:
+                                print("\r" + _msg + "   ", end="", flush=True)
 
                         if max_gr < self.maxgr and min_tz > self.mintz:
                             npass += 1
@@ -1110,6 +1124,8 @@ class DEMCPTSampler:
             if pool is not None:
                 pool.close()
                 pool.join()
+            if pbar is not None:
+                pbar.close()
 
         chain = chain[:final_step]
         log_prob = log_prob[:final_step]

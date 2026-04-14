@@ -79,11 +79,12 @@ def mcmc_lnprior(theta):
             if not (b[1] <= th <= b[2]):
                 return -np.inf
         elif b[0] == 'normal':
-            lnp += np.log( 1./(np.sqrt(2*np.pi) * b[2]) * np.exp( - (th - b[1])**2 / (2.*b[2]**2) ) )
+            # stable form: avoid log(exp(-large))=log(0) underflow
+            lnp += -0.5 * np.log(2 * np.pi) - np.log(b[2]) - 0.5 * ((th - b[1]) / b[2]) ** 2
         elif b[0] == 'trunc_normal':
             if not (b[1] <= th <= b[2]):
                 return -np.inf
-            lnp += np.log( 1./(np.sqrt(2*np.pi) * b[4]) * np.exp( - (th - b[3])**2 / (2.*b[4]**2) ) )
+            lnp += -0.5 * np.log(2 * np.pi) - np.log(b[4]) - 0.5 * ((th - b[3]) / b[4]) ** 2
         else:
             raise ValueError('Bounds have to be "uniform" or "normal". Input from "params.csv" was "'+b[0]+'".')
     return lnp
