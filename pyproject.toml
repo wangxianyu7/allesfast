@@ -9,14 +9,18 @@ description = "Allesfitter x EXOFASTv2"
 readme = "README.md"
 requires-python = ">=3.8"
 dependencies = [
-    "numpy>=1.24.3",
+    # Pinned: pytransit>=2.6.14 regressed on multi-lc/vector-t0 evaluate()
+    # (rr_full_parallel calls non-njit meepmeep.bounding_box, see
+    # numba TypingError).  Keep pytransit<=2.6.13 and meepmeep==0.7.2.
+    "numpy==1.24.3",
+    "pytransit==2.6.13",
+    "meepmeep==0.7.2",
     "scipy>=1.10.1",
     "matplotlib>=3.8.3",
     "astropy>=6.0.0",
     "seaborn>=0.13.2",
     "emcee>=3.1.6",
     "dynesty>=2.1.3",
-    "pytransit>=2.6.5",
     "radvel>=1.5.6",
     "celerite",
     "arviz>=0.17.0",
