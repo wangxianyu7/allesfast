@@ -1184,6 +1184,9 @@ def mcmc_fit(datadir, method=None):
 
     if method is None:
         method = s.get('mcmc_sampler', 'emcee')
+    # Keep settings in sync so downstream mcmc_output() picks the right
+    # post-processing path (e.g. skip redundant autocorr check for demcpt).
+    s['mcmc_sampler'] = method
 
     t0 = timer()
 
