@@ -898,11 +898,10 @@ def _run_emcee(s, p0_de=None, p0_best=None):
 
     backend = emcee.backends.HDFBackend(save_h5)
 
-    # Compute init_scale: DE pop std > getmcmcscale > init_err fallback
-    if p0_de is not None and len(p0_de) > 2:
-        _init_scale = np.std(p0_de, axis=0)
-        _init_scale[_init_scale == 0] = 1e-8
-    elif p0_best is not None:
+    # Always use Δχ²=1 search (posterior-scale) starting from amoeba-refined
+    # MLE.  DE population std collapses to <1% of prior width and biases
+    # posterior widths small.
+    if p0_best is not None:
         logprint('  Computing MCMC scale via Δχ²=1 search (emcee init)...')
         _init_scale = getmcmcscale(p0_best, mcmc_lnprob, debug=False)
     else:
@@ -1111,16 +1110,14 @@ def _run_demcpt(s, p0_de=None, de_pop=None):
     continue_old_run = os.path.exists(save_file)
 
     # --- Determine MCMC scale ------------------------------------------------
-    # Priority: 1) DE population std  2) Δχ²=1 binary search (EXOFASTv2)
-    if de_pop is not None and len(de_pop) > 2:
-        mcmc_scale = np.std(de_pop, axis=0)
-        mcmc_scale[mcmc_scale == 0] = 1e-8
-        logprint(f'  MCMC scale: from DE population std (median={np.median(mcmc_scale):.4e})')
-    else:
-        p0_start = p0_de if p0_de is not None else config.BASEMENT.theta_0
-        logprint('  Computing MCMC scale via Δχ²=1 search (EXOFASTv2 getmcmcscale)...')
-        mcmc_scale = getmcmcscale(p0_start, mcmc_lnprob, debug=False)
-        logprint(f'  MCMC scale: from Δχ²=1 search (median={np.median(mcmc_scale):.4e})')
+    # Always use Δχ²=1 binary search (EXOFASTv2 getmcmcscale) starting from
+    # amoeba-refined MLE.  DE population std underestimates the posterior σ
+    # because DE converges to <1% of prior width, which collapses walker
+    # initial spread and biases posterior widths small.
+    p0_start = p0_de if p0_de is not None else config.BASEMENT.theta_0
+    logprint('  Computing MCMC scale via Δχ²=1 search (EXOFASTv2 getmcmcscale)...')
+    mcmc_scale = getmcmcscale(p0_start, mcmc_lnprob, debug=False)
+    logprint(f'  MCMC scale: from Δχ²=1 search (median={np.median(mcmc_scale):.4e})')
 
     logprint(f'  nchains={nchains}  ntemps={ntemps}  target_thinned_steps={nsteps}  nthin={nthin}')
     logprint(f'  maxgr={maxgr}  mintz={mintz}  nworkers={nworkers}')
