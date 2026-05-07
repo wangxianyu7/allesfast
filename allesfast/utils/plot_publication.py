@@ -924,10 +924,14 @@ def _plot_rm(ax_top, ax_bot, d, epoch, params, companion='b',
     kep_dense = sum(_compute_keplerian(d['time_dense'], params, c) for c in _all_comps)
 
     # Baseline-subtracted, Keplerian-removed RM signal in m/s
-    y     = (d['data'] - d['baseline'] - d['stellar_var'] - kep_data) * 1e3
+    # Median-residual correction: median posterior params are not the exact
+    # chi² minimum, so per-instrument residuals can carry a small constant
+    # bias. Subtracting it aligns data with the model. (Cf. 19fit.)
+    _resid_offset = float(np.nanmedian(d['residuals'])) * 1e3
+    y     = (d['data'] - d['baseline'] - d['stellar_var'] - kep_data) * 1e3 - _resid_offset
     yerr  = d['err'] * 1e3
     mod_d = (d['model_dense'] - kep_dense) * 1e3
-    resid = d['residuals'] * 1e3
+    resid = d['residuals'] * 1e3 - _resid_offset
 
     # Dense model now covers full ±T14*0.7 range (extended in save_modelfiles)
     if t14_hrs is not None and np.isfinite(t14_hrs):

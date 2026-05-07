@@ -1383,7 +1383,7 @@ class Basement():
             except:
                 time, flux, flux_err = np.genfromtxt(_fpath, delimiter=',', dtype=float, unpack=True)[0:3]
                 custom_series = np.zeros_like(time)
-            if any(np.isnan(time*flux*flux_err*custom_series)):
+            if np.any(np.isnan(np.atleast_1d(time*flux*flux_err*custom_series))):
                 raise ValueError('There are NaN values in "'+inst+'.csv". Please make sure everything is fine with your data, then exclude these rows from the file and restart.')
             if any(flux_err==0):
                 raise ValueError('There are uncertainties with values of 0 in "'+inst+'.csv". Please make sure everything is fine with your data, then exclude these rows from the file and restart.')
@@ -1429,7 +1429,7 @@ class Basement():
             except:
                 time, rv, rv_err = np.genfromtxt(_fpath, delimiter=',', dtype=float, unpack=True)[0:3]
                 custom_series = np.zeros_like(time)
-            if any(np.isnan(time*rv*rv_err*custom_series)):
+            if np.any(np.isnan(np.atleast_1d(time*rv*rv_err*custom_series))):
                 raise ValueError('There are NaN values in "'+inst+'.csv". Please make sure everything is fine with your data, then exclude these rows from the file and restart.')
             #aCkTuaLLLyy rv_err=0 is ok, since we add a jitter term here anyway (instead of scaling)
             # if any(rv_err==0):

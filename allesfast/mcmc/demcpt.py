@@ -1000,6 +1000,8 @@ class DEMCPTSampler:
                   f"(resuming from {old_steps}, target {nsteps}) ...")
 
         pool = Pool(nworkers) if use_pool else None
+        pbar = tqdm(total=total_steps, desc='MCMC', disable=not (progress and tqdm is not None),
+                    mininterval=0.5, dynamic_ncols=True) if tqdm is not None else None
         try:
             _bidir = (self.swap_mode == 'bidirectional')
             _sf = self.stretch_fraction
