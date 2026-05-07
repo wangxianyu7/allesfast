@@ -10,7 +10,7 @@ b_f_s,-0.2355520872,1,uniform -1.0 1.0,sqrt_e_sinw,
 #RM params
 A_svsinicoslambda,1.6620398,1,uniform -10.0 10.0,sv_coslam,km/s^0.5
 A_svsinisinlambda,-0.18505071,1,uniform -10.0 10.0,sv_sinlam,km/s^0.5
-A_vsini,3.60,0,normal 3.60 1.00,vsini,km/s
+A_vsini,3.60,1,normal 3.60 1.00,vsini,km/s
 #vxi/vzeta scale factors: vsini=3.6 ≈ vmac=3.0 km/s → degeneracy mitigation
 A_vxi_scale,1.0,1,uniform 0.5 2.0,xi_scale,
 A_vzeta_scale,1.0,1,uniform 0.5 2.0,zeta_scale,

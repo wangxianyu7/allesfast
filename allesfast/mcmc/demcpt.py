@@ -29,13 +29,10 @@ Usage
 """
 
 import numpy as np
+import sys
 from multiprocessing import Pool
 import h5py
 from time import time as _timer
-try:
-    from tqdm import tqdm
-except ImportError:
-    tqdm = None
 
 try:
     from numba import njit
@@ -706,19 +703,22 @@ class DEMCPTSampler:
             for m in range(ntemps):
                 niter = 0
                 while True:
-                    if have_pop and m == 0 and j < npop and niter == 0:
-                        # Cold chain with population member → use directly
+                    if j == 0 and m == 0 and niter == 0:
+                        # Cold chain 0 ALWAYS at p0 (amoeba-refined MLE) —
+                        # guarantees the best single point seen by optimizer
+                        # is in the chain at step 0.  Mirrors EXOFASTv2's
+                        # factor=0 for j==0.
+                        trial = p0.copy()
+                    elif have_pop and m == 0 and j < npop and niter == 0:
+                        # Other cold chains: seed from DE population member
                         trial = population[j].copy()
                     elif have_pop and niter == 0:
                         # Hot chain or extra cold walker → perturb random member
                         src = population[rng.integers(npop)]
                         factor = min(np.sqrt(500.0 / ndim), 3.0)
                         trial = src + factor * scale * rng.standard_normal(ndim)
-                    elif j == 0 and m == 0 and niter == 0:
-                        # No population: first cold walker at p0
-                        trial = p0.copy()
                     else:
-                        # No population: perturb from p0 (EXOFASTv2 style)
+                        # No population (or retry): perturb from p0 with decay
                         factor = min(np.sqrt(500.0 / ndim), 3.0)
                         trial = p0 + (factor / np.exp(niter / 1000.0)
                                       * scale * rng.standard_normal(ndim))
@@ -768,8 +768,15 @@ class DEMCPTSampler:
             print(f"Running MCMC{workers_s} ...")
 
         pool = Pool(nworkers) if use_pool else None
-        pbar = tqdm(total=nsteps - 1, desc='MCMC', disable=not (progress and tqdm is not None),
-                    mininterval=0.5, dynamic_ncols=True) if tqdm is not None else None
+        # Print-based progress: every progress_every thinned steps, write a
+        # single line with pct/accept/swap to stdout.  TTY uses \r for
+        # in-place refresh; non-TTY (SLURM, redirect) uses newline-per-line
+        # so the log is preserved.
+        _is_tty = sys.stdout.isatty()
+        _progress_every = max(1, nsteps // 100)  # ~100 progress lines total
+        _last_progress_line_len = 0
+        _last_gr = None   # cached Gelman-Rubin (last computed at check_every)
+        _last_tz = None   # cached Tz
         try:
             _bidir = (self.swap_mode == 'bidirectional')
             _sf = self.stretch_fraction
@@ -852,14 +859,6 @@ class DEMCPTSampler:
                     betas = self.betas  # update local ref
                     betas_history[i] = betas.copy()
 
-                if pbar is not None:
-                    acc = naccept / max(nattempt, 1) * 100
-                    _post = {'acc': f'{acc:.1f}%'}
-                    if ntemps > 1 and nswap_attempt > 0:
-                        _post['swap'] = f'{nswap/nswap_attempt*100:.1f}%'
-                    pbar.set_postfix(_post, refresh=False)
-                    pbar.update(1)
-
                 if save_every > 0 and (i + 1) % save_every == 0:
                     self._chain = chain[:i + 1]
                     self._log_prob = log_prob[:i + 1]
@@ -868,38 +867,45 @@ class DEMCPTSampler:
                     self.save(save_file)
                     last_saved = i + 1
 
+                # --- Compute GR/Tz at check_every; cache last value ------
                 if (i + 1) % check_every == 0 and i > 2 * nchains:
                     chi2 = -2.0 * log_prob[:i + 1]
                     burnndx = _find_burnin(chi2)
                     post_burn = chain[burnndx:i + 1]
-
                     if post_burn.shape[0] > 10:
                         Rhat, Tz = _gelman_rubin(post_burn)
-                        max_gr = float(np.max(Rhat))
-                        min_tz = float(np.min(Tz))
-                        acc = naccept / max(nattempt, 1) * 100
-                        swap_s = (f"; swap={nswap/nswap_attempt*100:.1f}%"
-                                  if ntemps > 1 and nswap_attempt > 0 else "")
-                        if progress:
-                            save_s = (f" | saved at step {last_saved}"
-                                      if last_saved is not None else "")
-                            _msg = (f"  {100*(i+1)/nsteps:5.1f}% | "
-                                    f"accept={acc:.1f}%{swap_s} | "
-                                    f"GR={max_gr:.4f} (<{self.maxgr}) | "
-                                    f"Tz={min_tz:.0f} (>{self.mintz}){save_s}")
-                            if pbar is not None:
-                                pbar.write(_msg)
-                            else:
-                                print("\r" + _msg + "   ", end="", flush=True)
-
-                        if max_gr < self.maxgr and min_tz > self.mintz:
+                        _last_gr = float(np.max(Rhat))
+                        _last_tz = float(np.min(Tz))
+                        if _last_gr < self.maxgr and _last_tz > self.mintz:
                             npass += 1
                             if npass >= npass_required:
                                 converged = True
                                 final_step = i + 1
-                                break
                         else:
                             npass = 0
+
+                # --- Single-line progress: pct | accept | swap | GR | Tz | saved
+                if progress and ((i + 1) % _progress_every == 0 or converged):
+                    acc = naccept / max(nattempt, 1) * 100
+                    pct = 100. * (i + 1) / nsteps
+                    swap_s = (f"; swap={nswap/nswap_attempt*100:.1f}%"
+                              if ntemps > 1 and nswap_attempt > 0 else "")
+                    gr_s = (f" | GR={_last_gr:.4f} (<{self.maxgr})"
+                            if _last_gr is not None else "")
+                    tz_s = (f" | Tz={_last_tz:.0f} (>{self.mintz})"
+                            if _last_tz is not None else "")
+                    save_s = (f" | saved at step {last_saved}"
+                              if last_saved is not None else "")
+                    _line = f"  {pct:5.1f}% | accept={acc:.1f}%{swap_s}{gr_s}{tz_s}{save_s}"
+                    if _is_tty:
+                        pad = max(0, _last_progress_line_len - len(_line))
+                        print("\r" + _line + " " * pad, end="", flush=True)
+                        _last_progress_line_len = len(_line)
+                    else:
+                        print(_line, flush=True)
+
+                if converged:
+                    break
 
                 if deadline is not None and _timer() >= deadline:
                     final_step = i + 1
@@ -910,8 +916,8 @@ class DEMCPTSampler:
             if pool is not None:
                 pool.close()
                 pool.join()
-            if pbar is not None:
-                pbar.close()
+            if _is_tty and _last_progress_line_len > 0:
+                print()  # newline after final \r progress line
 
         chain = chain[:final_step]
         log_prob = log_prob[:final_step]
@@ -1000,8 +1006,11 @@ class DEMCPTSampler:
                   f"(resuming from {old_steps}, target {nsteps}) ...")
 
         pool = Pool(nworkers) if use_pool else None
-        pbar = tqdm(total=total_steps, desc='MCMC', disable=not (progress and tqdm is not None),
-                    mininterval=0.5, dynamic_ncols=True) if tqdm is not None else None
+        _is_tty = sys.stdout.isatty()
+        _progress_every = max(1, total_steps // 100)
+        _last_progress_line_len = 0
+        _last_gr = None   # cached Gelman-Rubin (last computed at check_every)
+        _last_tz = None   # cached Tz
         try:
             _bidir = (self.swap_mode == 'bidirectional')
             _sf = self.stretch_fraction
@@ -1067,14 +1076,6 @@ class DEMCPTSampler:
                     betas = self.betas
                     betas_history[i] = betas.copy()
 
-                if pbar is not None:
-                    acc = naccept / max(nattempt, 1) * 100
-                    _post = {'acc': f'{acc:.1f}%'}
-                    if ntemps > 1 and nswap_attempt > 0:
-                        _post['swap'] = f'{nswap/nswap_attempt*100:.1f}%'
-                    pbar.set_postfix(_post, refresh=False)
-                    pbar.update(1)
-
                 if save_every > 0 and (i + 1) % save_every == 0:
                     self._chain = chain[:i + 1]
                     self._log_prob = log_prob[:i + 1]
@@ -1083,38 +1084,43 @@ class DEMCPTSampler:
                     self.save(save_file)
                     last_saved = i + 1
 
+                # --- Compute GR/Tz at check_every; cache last value ------
                 if (i + 1) % check_every == 0 and i > 2 * nchains:
                     chi2 = -2.0 * log_prob[:i + 1]
                     burnndx = _find_burnin(chi2)
                     post_burn = chain[burnndx:i + 1]
-
                     if post_burn.shape[0] > 10:
                         Rhat, Tz = _gelman_rubin(post_burn)
-                        max_gr = float(np.max(Rhat))
-                        min_tz = float(np.min(Tz))
-                        acc = naccept / max(nattempt, 1) * 100
-                        swap_s = (f"; swap={nswap/nswap_attempt*100:.1f}%"
-                                  if ntemps > 1 and nswap_attempt > 0 else "")
-                        if progress:
-                            save_s = (f" | saved at step {last_saved}"
-                                      if last_saved is not None else "")
-                            _msg = (f"  {100*(i+1)/nsteps:5.1f}% | "
-                                    f"accept={acc:.1f}%{swap_s} | "
-                                    f"GR={max_gr:.4f} (<{self.maxgr}) | "
-                                    f"Tz={min_tz:.0f} (>{self.mintz}){save_s}")
-                            if pbar is not None:
-                                pbar.write(_msg)
-                            else:
-                                print("\r" + _msg + "   ", end="", flush=True)
-
-                        if max_gr < self.maxgr and min_tz > self.mintz:
+                        _last_gr = float(np.max(Rhat))
+                        _last_tz = float(np.min(Tz))
+                        if _last_gr < self.maxgr and _last_tz > self.mintz:
                             npass += 1
                             if npass >= npass_required:
                                 converged = True
                                 final_step = i + 1
-                                break
                         else:
                             npass = 0
+
+                # --- Single-line progress: pct | accept | swap | GR | Tz | saved
+                if progress and ((i + 1) % _progress_every == 0 or converged):
+                    acc = naccept / max(nattempt, 1) * 100
+                    pct = 100. * (i + 1) / nsteps
+                    swap_s = (f"; swap={nswap/nswap_attempt*100:.1f}%"
+                              if ntemps > 1 and nswap_attempt > 0 else "")
+                    gr_s = (f" | GR={_last_gr:.4f} (<{self.maxgr})"
+                            if _last_gr is not None else "")
+                    tz_s = (f" | Tz={_last_tz:.0f} (>{self.mintz})"
+                            if _last_tz is not None else "")
+                    save_s = (f" | saved at step {last_saved}"
+                              if last_saved is not None else "")
+                    _line = f"  {pct:5.1f}% | accept={acc:.1f}%{swap_s}{gr_s}{tz_s}{save_s}"
+                    if _is_tty:
+                        pad = max(0, _last_progress_line_len - len(_line))
+                        print("\r" + _line + " " * pad, end="", flush=True)
+                        _last_progress_line_len = len(_line)
+                    else:
+                        print(_line, flush=True)
+
                 if converged:
                     break
                 if deadline is not None and _timer() >= deadline:
@@ -1126,8 +1132,8 @@ class DEMCPTSampler:
             if pool is not None:
                 pool.close()
                 pool.join()
-            if pbar is not None:
-                pbar.close()
+            if _is_tty and _last_progress_line_len > 0:
+                print()  # newline after final \r progress line
 
         chain = chain[:final_step]
         log_prob = log_prob[:final_step]
