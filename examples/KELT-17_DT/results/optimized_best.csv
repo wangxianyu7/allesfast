@@ -1,0 +1,18 @@
+#name,value,fit,bounds,label,unit
+# Companion b
+b_rr,8.6386114399e-02,1,uniform 0.0 0.3,Rp/Rs,
+b_cosi,8.7070124752e-02,1,uniform 0.0 0.5,cos_i,
+b_epoch,2.4572877472e+06,1,uniform 2457287.74 2457287.76,T0_b,BJD
+b_period,3.0801747,0,uniform 3.0 3.2,P_b,d
+b_f_c,-2.7075643427e-01,1,uniform -1.0 1.0,sqrt(e)cos_w,
+b_f_s,-8.4858685750e-02,1,uniform -1.0 1.0,sqrt(e)sin_w,
+b_lambda,-2.0269200575e+00,1,uniform -3.1416 3.1416,lambda,rad
+# Stellar parameters (priors, not fitted to anything in this DT-only run)
+A_rstar,1.6468001512e+00,1,normal 1.6458 0.05,R_star,Rsun
+A_logmstar,2.5944163202e-01,1,normal 0.2604 0.03,log_Mstar,dex
+A_teff,7.4539697503e+03,1,normal 7454.0 50.0,Teff,K
+A_feh,-2.4879747489e-03,1,normal 0.0 0.1,feh,dex
+# DT-specific parameters
+A_vsini,4.4195254644e+01,1,normal 44.2 1.4,vsini,km/s
+A_vline_TRES,5.4805525467e+00,1,normal 5.49 0.48,vline_TRES,km/s
+A_dt_errscale_TRES,9.9998094729e+00,1,uniform 0.5 10.0,errscale_TRES,

@@ -1936,9 +1936,81 @@ def calculate_lnlike_total(params, debug=False):
 
                     
             
-    #--------------------------------------------------------------------------  
+    #--------------------------------------------------------------------------
+    #::: Doppler Tomography (DT)
+    #::: for each DT instrument compute Beatty2015/Eastman2017 chi^2
+    #--------------------------------------------------------------------------
+    _dt_insts = config.BASEMENT.settings.get('inst_dt', [])
+    if _dt_insts:
+        from .dt.core import dopptom_chi2
+        from .utils.quadld import quadld
+        # Use the first photometric companion as the planet (single-planet DT
+        # is the only supported mode at the moment).
+        if not config.BASEMENT.settings['companions_phot']:
+            if debug: print('[DEBUG lnprob] -inf: inst_dt set but companions_phot empty')
+            return -np.inf
+        companion = config.BASEMENT.settings['companions_phot'][0]
+
+        # Derive stellar logg in cgs from A_mstar, A_rstar
+        _Msun_kg = 1.989e30; _Rsun_m = 6.957e8; _G_si = 6.674e-11
+        try:
+            _mstar = float(params['A_mstar'])
+            _rstar = float(params['A_rstar'])
+            g_cgs = _G_si * _mstar * _Msun_kg / (_rstar * _Rsun_m) ** 2 * 100.0
+            logg_dt = float(np.log10(g_cgs))
+        except Exception:
+            if debug: print('[DEBUG lnprob] -inf from DT logg derivation')
+            return -np.inf
+        teff_dt = float(params.get('A_teff', np.nan))
+        feh_dt  = float(params.get('A_feh',  0.0))
+
+        # Geometric quantities
+        rsuma_b = params.get(companion + '_rsuma')
+        if rsuma_b is None or not np.isfinite(rsuma_b) or rsuma_b <= 0:
+            if debug: print('[DEBUG lnprob] -inf from DT: invalid rsuma')
+            return -np.inf
+        rr_b = float(params[companion + '_rr'])
+        ar_b = (1.0 + rr_b) / float(rsuma_b)
+        cosi_b = float(params[companion + '_cosi'])
+        # ecc/omega from sqrt(e)cos w, sqrt(e)sin w
+        _fc = float(params[companion + '_f_c'])
+        _fs = float(params[companion + '_f_s'])
+        e_b = _fc * _fc + _fs * _fs
+        w_b = float(np.mod(np.arctan2(_fs, _fc), 2 * np.pi))
+        tc_b = float(params[companion + '_epoch'])
+        per_b = float(params[companion + '_period'])
+        # Spin–orbit angle (radians).  Prefer companion-specific lambda,
+        # else fall back to host-wide A_lambda.
+        lam_b = params.get(companion + '_lambda',
+                            params.get('A_lambda', 0.0))
+        lam_b = float(lam_b)
+
+        # vsini in km/s (allesfast stores in km/s already)
+        vsini_kms = float(params.get('A_vsini', 0.0))
+
+        for inst in _dt_insts:
+            band = config.BASEMENT.settings.get(f'dt_ld_band_{inst}', 'V')
+            u1, u2 = quadld(logg_dt, teff_dt, feh_dt, band)
+            if not (np.isfinite(u1) and np.isfinite(u2)):
+                if debug: print(f'[DEBUG lnprob] -inf from DT LD nan: inst={inst}')
+                return -np.inf
+            vline = float(params.get(f'A_vline_{inst}', np.nan))
+            errs  = float(params.get(f'A_dt_errscale_{inst}', 1.0))
+            dt_chi2 = dopptom_chi2(
+                config.BASEMENT.dt_data[inst],
+                tc=tc_b, period=per_b, e=e_b, omega=w_b,
+                cosi=cosi_b, k=rr_b, ar=ar_b, lam=lam_b,
+                u1=float(u1), u2=float(u2),
+                vsini=vsini_kms, vline=vline, errscale=errs,
+            )
+            if not np.isfinite(dt_chi2):
+                if debug: print(f'[DEBUG lnprob] -inf from DT chi2: inst={inst}')
+                return -np.inf
+            lnlike_total += -0.5 * dt_chi2
+
+    #--------------------------------------------------------------------------
     #::: again, catch any issues
-    #--------------------------------------------------------------------------  
+    #--------------------------------------------------------------------------
     if np.isnan(lnlike_total) or np.isinf(lnlike_total):
         if debug: print(f'[DEBUG lnprob] -inf at final check: lnlike_total={lnlike_total}')
         return -np.inf

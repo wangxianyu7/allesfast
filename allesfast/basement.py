@@ -319,21 +319,41 @@ class Basement():
         if 'time_format' not in self.settings:
             self.settings['time_format'] = 'BJD_TDB'
             
-        for key in ['companions_phot', 'companions_rv', 'inst_phot', 'inst_rv', 'inst_rv2']:
+        for key in ['companions_phot', 'companions_rv', 'inst_phot', 'inst_rv', 'inst_rv2', 'inst_dt']:
             if key not in self.settings:
                 self.settings[key] = []
-            elif len(self.settings[key]): 
+            elif len(self.settings[key]):
                 self.settings[key] = str(self.settings[key]).split(' ')
-            else:                       
+            else:
                 self.settings[key] = []
-        
+
         self.settings['companions_all']  = list(np.unique(self.settings['companions_phot']+self.settings['companions_rv'])) #sorted by b, c, d...
         self.settings['inst_all'] = list(unique( self.settings['inst_phot']+self.settings['inst_rv']+self.settings['inst_rv2'] )) #sorted like user input
-    
-        if len(self.settings['inst_phot'])==0 and len(self.settings['companions_phot'])>0:
-            raise ValueError('No photometric instrument is selected, but photometric companions are given.')
+
+        if (len(self.settings['inst_phot'])==0
+                and len(self.settings['companions_phot'])>0
+                and len(self.settings.get('inst_dt', []))==0):
+            raise ValueError('No photometric (or DT) instrument is selected, '
+                             'but photometric companions are given.')
         if len(self.settings['inst_rv'])==0 and len(self.settings['companions_rv'])>0:
            raise ValueError('No RV instrument is selected, but RV companions are given.')
+
+        # Doppler-Tomography: load each DT dataset once
+        if self.settings.get('inst_dt'):
+            from .dt.io import read_dt_fits
+            self.dt_data = {}
+            for _inst in self.settings['inst_dt']:
+                _key = 'dt_file_' + _inst
+                if _key not in self.settings:
+                    raise ValueError(
+                        f'DT instrument "{_inst}" listed in inst_dt but '
+                        f'settings.csv has no "{_key}" entry.')
+                _path = str(self.settings[_key])
+                if not os.path.isabs(_path):
+                    _path = os.path.join(self.datadir, _path)
+                if not os.path.exists(_path):
+                    raise FileNotFoundError(f'DT file not found: {_path}')
+                self.dt_data[_inst] = read_dt_fits(_path)
             
             
         #::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::

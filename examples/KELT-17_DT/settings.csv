@@ -1,0 +1,28 @@
+#name,value
+# KELT-17b — DT-only fit (no transit photometry, no RV).
+# Validates allesfast's DT likelihood end-to-end on a real dataset.
+companions_phot,b
+companions_rv,
+inst_phot,
+inst_rv,
+inst_dt,TRES
+dt_file_TRES,n20160226.KELT-17b.TRES.44000.fits
+dt_ld_band_TRES,V
+fast_fit,True
+fast_fit_width,0.3333333
+shift_epoch,False
+mcmc_sampler,demcpt
+mcmc_total_steps,2000
+mcmc_nwalkers,40
+mcmc_ntemps,4
+mcmc_thin_by,10
+mcmc_maxgr,1.1
+mcmc_mintz,200
+de_ngen,2000
+multiprocess,True
+multiprocess_cores,all
+use_mist_prior,False
+use_sed_prior,False
+use_torres_prior,False
+fit_sed_only,False
+cornerplot,False

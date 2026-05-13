@@ -438,6 +438,10 @@ def run_de_optimization(s):
         timed_out = False
         converged = False
         _conv_count = 0
+        # Periodic checkpoint of the best point (so users can monitor the run
+        # and recover if it dies).  Default 500 generations; override via
+        # settings.csv → de_save_every.
+        _save_every = int(s.get('de_save_every', 500))
         for _, best_fit in de(ngen):
             # # Reset frozen sed_errscale after each DE generation
             # for _fi, _fv in _errscale_freeze.items():
@@ -454,6 +458,20 @@ def run_de_optimization(s):
                     _postfix['n_inf'] = _n_inf
                 bar.set_postfix(**_postfix)
                 bar.update(1)
+            # Periodic checkpoint: save optimized_best.csv only (population
+            # save and plots are reserved for the end of DE for speed).
+            if _save_every > 0 and ngen_done % _save_every == 0:
+                try:
+                    _best_idx = int(np.argmin(de._fitness))
+                    _best_pars = de._population[_best_idx].copy()
+                    _save_optimized_best(
+                        dict(zip(config.BASEMENT.fitkeys, _best_pars)),
+                        best_file)
+                    logprint(f"  [gen {ngen_done}] checkpointed best "
+                             f"(lnprob={-best_fit:.4f}, dlnp={_dlnp:.4f}) → "
+                             f"{best_file}")
+                except Exception as _e:
+                    logprint(f"  [gen {ngen_done}] checkpoint save failed: {_e}")
             if _dlnp < de_dlnprob:
                 _conv_count += 1
                 if _conv_count >= de_nconv:
