@@ -1,0 +1,19 @@
+Doppler Tomography χ² benchmark: allesfast vs EXOFASTv2 IDL
+================================================================
+
+Dataset: KELT-17b TRES R=44000
+         5273 vels × 33 times = 174,009 pixels
+Anchor:  EXOFASTv2 best-fit (kelt17.priors2)
+
+Grid: 40 points across (lambda, vsini, vline, cosi)
+
+Per-axis statistics:
+----------------------------------------------------------------
+  lambda    N=11  max|Δχ²|=4.9290e-04  mean|Δχ²|=3.1567e-04  max rel=9.2405e-07
+  vsini     N= 9  max|Δχ²|=2.8111e-04  mean|Δχ²|=1.1799e-04  max rel=5.3759e-07
+  vline     N=11  max|Δχ²|=9.8839e-05  mean|Δχ²|=5.7323e-05  max rel=1.9293e-07
+  cosi      N= 9  max|Δχ²|=1.5466e-03  mean|Δχ²|=3.5162e-04  max rel=2.7581e-06
+
+Overall:  max|Δχ²|=1.5466e-03  max rel=2.7581e-06  mean rel=3.8732e-07
+
+Verdict: PASS (threshold rel < 1e-3)
