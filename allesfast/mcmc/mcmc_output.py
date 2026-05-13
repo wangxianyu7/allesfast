@@ -518,8 +518,21 @@ def mcmc_output(datadir, quiet=False):
             logprint('\nSaved', path)
     except Exception:
         pass
-        
-        
+
+    #::: DT shadow plots, one per DT instrument
+    if config.BASEMENT.settings.get('inst_dt'):
+        from ..dt.plotting import make_dt_plot
+        for _inst in config.BASEMENT.settings['inst_dt']:
+            try:
+                path = make_dt_plot(params_median, config.BASEMENT.datadir,
+                                    config.BASEMENT.outdir,
+                                    outfile=f'mcmc_dt_{_inst}.pdf', inst=_inst)
+                if path is not None:
+                    logprint('\nSaved', path)
+            except Exception as _e:
+                logprint(f'\nDT plot ({_inst}) failed: {_e}')
+
+
     #::: plot TTV results (if wished for)
     if config.BASEMENT.settings['fit_ttvs'] == True:
         plot_ttv_results(params_median, params_ll, params_ul)

@@ -328,6 +328,9 @@ def afplot(samples, companion):
     print('Plotting collage for companion', companion+'...')
 
     N_inst = len(config.BASEMENT.settings['inst_all'])
+    if N_inst == 0:
+        # DT-only fits have no inst_phot/inst_rv; skip the collage entirely.
+        return None, None
 
     if 'do_not_phase_fold' in config.BASEMENT.settings and config.BASEMENT.settings['do_not_phase_fold']:
         fig, axes = plt.subplots(N_inst,1,figsize=(6*1,4*N_inst))
@@ -1386,6 +1389,23 @@ def plot_initial_guess(return_figs=False, kwargs_dict=None):
                 logprint(f'\nSaved {path}')
         except Exception as _e:
             logprint(f'\nMIST plot failed: {_e}')
+        #::: DT shadow plots, one per DT instrument
+        if config.BASEMENT.settings.get('inst_dt'):
+            from .dt.plotting import make_dt_plot
+            from .computer import update_params
+            _theta = np.array([config.BASEMENT.params[k]
+                                for k in config.BASEMENT.fitkeys])
+            _p = update_params(_theta)
+            for _inst in config.BASEMENT.settings['inst_dt']:
+                try:
+                    path = make_dt_plot(_p, config.BASEMENT.datadir,
+                                        config.BASEMENT.outdir,
+                                        outfile=f'initial_guess_dt_{_inst}.pdf',
+                                        inst=_inst)
+                    if path is not None:
+                        logprint(f'\nSaved {path}')
+                except Exception as _e:
+                    logprint(f'\nDT plot ({_inst}) failed: {_e}')
         try:
             save_modelfiles(samples, 'initial_guess')
         except Exception as _e:

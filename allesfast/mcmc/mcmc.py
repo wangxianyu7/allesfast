@@ -667,6 +667,18 @@ def _plot_de_fit(best_theta):
             logprint(f"  Saved: {path}")
     except Exception as e:
         logprint(f"  WARNING: DE MIST plot failed – {e}")
+    #::: DT shadow plots
+    if config.BASEMENT.settings.get('inst_dt'):
+        from ..dt.plotting import make_dt_plot
+        for _inst in config.BASEMENT.settings['inst_dt']:
+            try:
+                path = make_dt_plot(params_median, config.BASEMENT.datadir,
+                                    outdir, outfile=f'optimized_dt_{_inst}.pdf',
+                                    inst=_inst)
+                if path:
+                    logprint(f"  Saved: {path}")
+            except Exception as e:
+                logprint(f"  WARNING: DE DT plot ({_inst}) failed – {e}")
 
 
 ###########################################################################

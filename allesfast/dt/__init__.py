@@ -2,6 +2,6 @@
 
 from .core import dopptom_chi2
 from .io import read_dt_fits
-from .plotting import plot_dt
+from .plotting import plot_dt, make_dt_plot
 
-__all__ = ['dopptom_chi2', 'read_dt_fits', 'plot_dt']
+__all__ = ['dopptom_chi2', 'read_dt_fits', 'plot_dt', 'make_dt_plot']
