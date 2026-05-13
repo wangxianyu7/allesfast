@@ -1,28 +1,118 @@
 #name,value
-# KELT-17b — DT-only fit (no transit photometry, no RV).
-# Validates allesfast's DT likelihood end-to-end on a real dataset.
+# KELT-17b — full joint fit:
+#   12 transit photometry files (6 telescopes × multiple bands)
+#   2 RVs (TRES out-of-transit + TRESRM in-transit RM)
+#   1 Doppler tomography spectrum (TRES R=44000)
+#   1 SED (Tycho + 2MASS + WISE + Gaia)
 companions_phot,b
-companions_rv,
-inst_phot,
-inst_rv,
-inst_dt,TRES
-dt_file_TRES,n20160226.KELT-17b.TRES.44000.fits
-dt_ld_band_TRES,V
-fast_fit,True
-fast_fit_width,0.3333333
-shift_epoch,False
-mcmc_sampler,demcpt
-mcmc_total_steps,2000
-mcmc_nwalkers,40
-mcmc_ntemps,4
-mcmc_thin_by,10
-mcmc_maxgr,1.1
-mcmc_mintz,200
-de_ngen,2000
-multiprocess,True
-multiprocess_cores,all
-use_mist_prior,False
-use_sed_prior,False
+companions_rv,b
+inst_phot,CROW_I KUO_I KUO_V Pvdk_Sloanz Whitin_Sloang Whitin_Sloani WCO_Sloanz MVRC_Sloang MVRC_Sloani PEST_B ZRO_I MVRC_Sloanr
+inst_rv,TRES TRESRM
+inst_dt,TRES_DT
+dt_file_TRES_DT,n20160226.KELT-17b.TRES.44000.fits
+dt_ld_band_TRES_DT,V
+sed_file,kelt17.sed
+# Stellar priors
+use_mist_prior,True
+use_sed_prior,True
 use_torres_prior,False
 fit_sed_only,False
+# MCMC
+mcmc_sampler,demcpt
+mcmc_total_steps,20000
+mcmc_nwalkers,80
+mcmc_ntemps,8
+mcmc_thin_by,10
+mcmc_maxgr,1.05
+mcmc_mintz,500
+de_ngen,5000
+de_dlnprob,1.0
+de_nconv,3
+multiprocess,True
+multiprocess_cores,all
+fast_fit,True
+fast_fit_width,0.3333333
+shift_epoch,True
+inst_for_b_epoch,all
+# Limb darkening: quadratic in all bands
+A_ld_law_CROW_I,quad
+A_ld_law_KUO_I,quad
+A_ld_law_KUO_V,quad
+A_ld_law_Pvdk_Sloanz,quad
+A_ld_law_Whitin_Sloang,quad
+A_ld_law_Whitin_Sloani,quad
+A_ld_law_WCO_Sloanz,quad
+A_ld_law_MVRC_Sloang,quad
+A_ld_law_MVRC_Sloani,quad
+A_ld_law_PEST_B,quad
+A_ld_law_ZRO_I,quad
+A_ld_law_MVRC_Sloanr,quad
+# Exposure time (placeholder ≈ 1 min — adjust per real obs if needed)
+t_exp_CROW_I,0.0007
+t_exp_KUO_I,0.0007
+t_exp_KUO_V,0.0007
+t_exp_Pvdk_Sloanz,0.0007
+t_exp_Whitin_Sloang,0.0007
+t_exp_Whitin_Sloani,0.0007
+t_exp_WCO_Sloanz,0.0007
+t_exp_MVRC_Sloang,0.0007
+t_exp_MVRC_Sloani,0.0007
+t_exp_PEST_B,0.0007
+t_exp_ZRO_I,0.0007
+t_exp_MVRC_Sloanr,0.0007
+# Baselines and noise — sample-offset for all transits + RVs
+baseline_flux_CROW_I,sample_offset
+baseline_flux_KUO_I,sample_offset
+baseline_flux_KUO_V,sample_offset
+baseline_flux_Pvdk_Sloanz,sample_offset
+baseline_flux_Whitin_Sloang,sample_offset
+baseline_flux_Whitin_Sloani,sample_offset
+baseline_flux_WCO_Sloanz,sample_offset
+baseline_flux_MVRC_Sloang,sample_offset
+baseline_flux_MVRC_Sloani,sample_offset
+baseline_flux_PEST_B,sample_offset
+baseline_flux_ZRO_I,sample_offset
+baseline_flux_MVRC_Sloanr,sample_offset
+error_flux_CROW_I,sample
+error_flux_KUO_I,sample
+error_flux_KUO_V,sample
+error_flux_Pvdk_Sloanz,sample
+error_flux_Whitin_Sloang,sample
+error_flux_Whitin_Sloani,sample
+error_flux_WCO_Sloanz,sample
+error_flux_MVRC_Sloang,sample
+error_flux_MVRC_Sloani,sample
+error_flux_PEST_B,sample
+error_flux_ZRO_I,sample
+error_flux_MVRC_Sloanr,sample
+baseline_rv_TRES,sample_offset
+baseline_rv_TRESRM,sample_offset
+error_rv_TRES,sample
+error_rv_TRESRM,sample
+# Grids: very_sparse for speed (consider 'sparse' or 'default' for publication)
+host_grid_CROW_I,very_sparse
+host_grid_KUO_I,very_sparse
+host_grid_KUO_V,very_sparse
+host_grid_Pvdk_Sloanz,very_sparse
+host_grid_Whitin_Sloang,very_sparse
+host_grid_Whitin_Sloani,very_sparse
+host_grid_WCO_Sloanz,very_sparse
+host_grid_MVRC_Sloang,very_sparse
+host_grid_MVRC_Sloani,very_sparse
+host_grid_PEST_B,very_sparse
+host_grid_ZRO_I,very_sparse
+host_grid_MVRC_Sloanr,very_sparse
+b_grid_CROW_I,very_sparse
+b_grid_KUO_I,very_sparse
+b_grid_KUO_V,very_sparse
+b_grid_Pvdk_Sloanz,very_sparse
+b_grid_Whitin_Sloang,very_sparse
+b_grid_Whitin_Sloani,very_sparse
+b_grid_WCO_Sloanz,very_sparse
+b_grid_Whitin_Sloang,very_sparse
+b_grid_MVRC_Sloang,very_sparse
+b_grid_MVRC_Sloani,very_sparse
+b_grid_PEST_B,very_sparse
+b_grid_ZRO_I,very_sparse
+b_grid_MVRC_Sloanr,very_sparse
 cornerplot,False

@@ -1,18 +1,90 @@
 #name,value,fit,bounds,label,unit
-# Companion b
+# Companion b — orbital geometry
 b_rr,0.0926333,1,uniform 0.0 0.3,Rp/Rs,
 b_cosi,0.0817318,1,uniform 0.0 0.5,cos_i,
-b_epoch,2457287.7456104,1,uniform 2457287.74 2457287.76,T0_b,BJD
-b_period,3.0801747,0,uniform 3.0 3.2,P_b,d
+b_epoch,2457287.7456104,1,uniform 2457287.7 2457287.8,T0_b,BJD
+b_period,3.0801747,1,uniform 3.07 3.10,P_b,d
+b_K,0.018,1,uniform 0.0 0.5,K_b,km/s
 b_f_c,0.2433198,1,uniform -1.0 1.0,sqrt(e)cos_w,
 b_f_s,-0.1518641,1,uniform -1.0 1.0,sqrt(e)sin_w,
 b_lambda,-2.0164720,1,uniform -3.1416 3.1416,lambda,rad
-# Stellar parameters (priors, not fitted to anything in this DT-only run)
-A_rstar,1.6458,1,normal 1.6458 0.05,R_star,Rsun
-A_logmstar,0.2604,1,normal 0.2604 0.03,log_Mstar,dex
-A_teff,7454.0,1,normal 7454.0 50.0,Teff,K
-A_feh,0.0,1,normal 0.0 0.1,feh,dex
-# DT-specific parameters
+# Limb-darkening (q1, q2) per photometric band — initial guess Claret quad
+A_ldc_q1_CROW_I,0.30,1,uniform 0.0 1.0,q1_CROW_I,
+A_ldc_q2_CROW_I,0.30,1,uniform 0.0 1.0,q2_CROW_I,
+A_ldc_q1_KUO_I,0.30,1,uniform 0.0 1.0,q1_KUO_I,
+A_ldc_q2_KUO_I,0.30,1,uniform 0.0 1.0,q2_KUO_I,
+A_ldc_q1_KUO_V,0.35,1,uniform 0.0 1.0,q1_KUO_V,
+A_ldc_q2_KUO_V,0.35,1,uniform 0.0 1.0,q2_KUO_V,
+A_ldc_q1_Pvdk_Sloanz,0.25,1,uniform 0.0 1.0,q1_Pvdk_Sloanz,
+A_ldc_q2_Pvdk_Sloanz,0.30,1,uniform 0.0 1.0,q2_Pvdk_Sloanz,
+A_ldc_q1_Whitin_Sloang,0.45,1,uniform 0.0 1.0,q1_Whitin_Sloang,
+A_ldc_q2_Whitin_Sloang,0.35,1,uniform 0.0 1.0,q2_Whitin_Sloang,
+A_ldc_q1_Whitin_Sloani,0.28,1,uniform 0.0 1.0,q1_Whitin_Sloani,
+A_ldc_q2_Whitin_Sloani,0.30,1,uniform 0.0 1.0,q2_Whitin_Sloani,
+A_ldc_q1_WCO_Sloanz,0.25,1,uniform 0.0 1.0,q1_WCO_Sloanz,
+A_ldc_q2_WCO_Sloanz,0.30,1,uniform 0.0 1.0,q2_WCO_Sloanz,
+A_ldc_q1_MVRC_Sloang,0.45,1,uniform 0.0 1.0,q1_MVRC_Sloang,
+A_ldc_q2_MVRC_Sloang,0.35,1,uniform 0.0 1.0,q2_MVRC_Sloang,
+A_ldc_q1_MVRC_Sloani,0.28,1,uniform 0.0 1.0,q1_MVRC_Sloani,
+A_ldc_q2_MVRC_Sloani,0.30,1,uniform 0.0 1.0,q2_MVRC_Sloani,
+A_ldc_q1_PEST_B,0.50,1,uniform 0.0 1.0,q1_PEST_B,
+A_ldc_q2_PEST_B,0.35,1,uniform 0.0 1.0,q2_PEST_B,
+A_ldc_q1_ZRO_I,0.30,1,uniform 0.0 1.0,q1_ZRO_I,
+A_ldc_q2_ZRO_I,0.30,1,uniform 0.0 1.0,q2_ZRO_I,
+A_ldc_q1_MVRC_Sloanr,0.35,1,uniform 0.0 1.0,q1_MVRC_Sloanr,
+A_ldc_q2_MVRC_Sloanr,0.30,1,uniform 0.0 1.0,q2_MVRC_Sloanr,
+# Baseline offsets — TRES gamma initial guess ~+113.6 km/s, RM zero-centred
+baseline_offset_rv_TRES,113.59,1,uniform 108.5 118.5,gamma_TRES,km/s
+baseline_offset_rv_TRESRM,0.0,1,uniform -2.0 2.0,gamma_TRESRM,km/s
+# RV jitter variance (km^2/s^2)
+jittervar_rv_TRES,0.0085,1,uniform -0.005 1.0,jvar_TRES,km2/s2
+jittervar_rv_TRESRM,0.0085,1,uniform -0.005 1.0,jvar_TRESRM,km2/s2
+# Transit additive noise variance (relflux^2); start at small positive
+variance_flux_CROW_I,1e-6,1,uniform -1e-5 1e-3,var_CROW_I,relflux2
+variance_flux_KUO_I,1e-6,1,uniform -1e-5 1e-3,var_KUO_I,relflux2
+variance_flux_KUO_V,1e-6,1,uniform -1e-5 1e-3,var_KUO_V,relflux2
+variance_flux_Pvdk_Sloanz,1e-6,1,uniform -1e-5 1e-3,var_Pvdk_Sloanz,relflux2
+variance_flux_Whitin_Sloang,1e-6,1,uniform -1e-5 1e-3,var_Whitin_Sloang,relflux2
+variance_flux_Whitin_Sloani,1e-6,1,uniform -1e-5 1e-3,var_Whitin_Sloani,relflux2
+variance_flux_WCO_Sloanz,1e-6,1,uniform -1e-5 1e-3,var_WCO_Sloanz,relflux2
+variance_flux_MVRC_Sloang,1e-6,1,uniform -1e-5 1e-3,var_MVRC_Sloang,relflux2
+variance_flux_MVRC_Sloani,1e-6,1,uniform -1e-5 1e-3,var_MVRC_Sloani,relflux2
+variance_flux_PEST_B,1e-6,1,uniform -1e-5 1e-3,var_PEST_B,relflux2
+variance_flux_ZRO_I,1e-6,1,uniform -1e-5 1e-3,var_ZRO_I,relflux2
+variance_flux_MVRC_Sloanr,1e-6,1,uniform -1e-5 1e-3,var_MVRC_Sloanr,relflux2
+# Photometric baseline offsets
+baseline_offset_flux_CROW_I,0.0,1,uniform -0.05 0.05,offset_CROW_I,
+baseline_offset_flux_KUO_I,0.0,1,uniform -0.05 0.05,offset_KUO_I,
+baseline_offset_flux_KUO_V,0.0,1,uniform -0.05 0.05,offset_KUO_V,
+baseline_offset_flux_Pvdk_Sloanz,0.0,1,uniform -0.05 0.05,offset_Pvdk_Sloanz,
+baseline_offset_flux_Whitin_Sloang,0.0,1,uniform -0.05 0.05,offset_Whitin_Sloang,
+baseline_offset_flux_Whitin_Sloani,0.0,1,uniform -0.05 0.05,offset_Whitin_Sloani,
+baseline_offset_flux_WCO_Sloanz,0.0,1,uniform -0.05 0.05,offset_WCO_Sloanz,
+baseline_offset_flux_MVRC_Sloang,0.0,1,uniform -0.05 0.05,offset_MVRC_Sloang,
+baseline_offset_flux_MVRC_Sloani,0.0,1,uniform -0.05 0.05,offset_MVRC_Sloani,
+baseline_offset_flux_PEST_B,0.0,1,uniform -0.05 0.05,offset_PEST_B,
+baseline_offset_flux_ZRO_I,0.0,1,uniform -0.05 0.05,offset_ZRO_I,
+baseline_offset_flux_MVRC_Sloanr,0.0,1,uniform -0.05 0.05,offset_MVRC_Sloanr,
+# RM/DT shared shape params
+A_svsinicoslambda,3.0,1,uniform -10.0 10.0,sv_coslam,km/s^0.5
+A_svsinisinlambda,-6.0,1,uniform -10.0 10.0,sv_sinlam,km/s^0.5
 A_vsini,44.2,1,normal 44.2 1.4,vsini,km/s
-A_vline_TRES,5.49,1,normal 5.49 0.48,vline_TRES,km/s
-A_dt_errscale_TRES,3.39,1,uniform 0.5 10.0,errscale_TRES,
+A_vxi_scale,1.0,1,uniform 0.5 2.0,xi_scale,
+A_vzeta_scale,1.0,1,uniform 0.5 2.0,zeta_scale,
+# DT-specific
+A_vline_TRES_DT,5.49,1,normal 5.49 0.48,vline_TRES_DT,km/s
+A_dt_errscale_TRES_DT,3.39,1,uniform 0.5 10.0,errscale_TRES_DT,
+# SED-specific (EXOFASTv2 style)
+A_sed_errscale,1.0,1,uniform 0.01 100.0,errscale_SED,
+# Stellar parameters (MIST + SED)
+A_rstar,1.6458,1,uniform 0.1 10.0,R_star,Rsun
+A_rstarsed,1.6458,1,uniform 0.1 20.0,Rstar_SED,Rsun
+A_logmstar,0.2604,1,uniform -1.0 1.0,log_Mstar,dex
+A_teff,7454.0,1,normal 7454.0 50.0,Teff,K
+A_teffsed,7454.0,1,uniform 3500 10000,Teff_SED,K
+A_feh,0.0,1,normal 0.0 0.1,feh,dex
+A_initfeh,0.0,1,uniform -5.0 0.5,feh_init,dex
+A_eep,308.7,1,uniform 1.0 808.0,EEP,
+A_av,0.05,1,trunc_normal 0.0 1.0 0.05 0.117,Av,mag
+A_parallax,4.4688,1,normal 4.4688 0.058,parallax,mas
+A_age,5.0,1,uniform 0.0 13.82,age,Gyr
