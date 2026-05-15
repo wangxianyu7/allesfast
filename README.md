@@ -2,4 +2,4 @@
 
 Allesfitter x EXOFASTv2
 
-📖 **Documentation**: [deepwiki.com/wangxianyu7/allesfast](https://deepwiki.com/wangxianyu7/allesfast)
+[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/wangxianyu7/allesfast)
