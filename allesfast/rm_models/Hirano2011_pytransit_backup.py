@@ -12,44 +12,10 @@ import functools
 import numpy as np
 from scipy.integrate import simpson as _simpson
 from scipy.special import j0 as _scipy_j0
+from pytransit import RoadRunnerModel
 
 
-def _occultquad_numeric(z_sep, p, u1, u2, n_r=2000):
-    """Quadratic limb-darkening occultation flux by direct radial integration.
-
-    Pure numpy (no numba / C extensions) so it runs in Pyodide / JupyterLite.
-    For each stellar ring at projected radius r in [0,1] with intensity I(r),
-    the fraction covered by the planet disk (centre distance z, radius p) is
-    2*alpha(r)/(2*pi).  flux = 1 - integral(I*2*alpha*r dr) / integral(I*2*pi*r dr).
-
-    Matches pytransit RoadRunnerModel('quadratic') to <~1e-5 in flux.
-
-    z_sep : array, sky-projected star-planet separation in units of R*.
-    p     : scalar Rp/R*.
-    """
-    z = np.atleast_1d(np.asarray(z_sep, dtype=float))
-    p = float(abs(p))
-    if p <= 0.0:
-        return np.ones_like(z)
-
-    edges = np.linspace(0.0, 1.0, n_r + 1)
-    r = 0.5 * (edges[:-1] + edges[1:])
-    dr = 1.0 / n_r
-    mu = np.sqrt(np.maximum(0.0, 1.0 - r * r))
-    I = 1.0 - u1 * (1.0 - mu) - u2 * (1.0 - mu) ** 2
-    Ftot = np.sum(I * 2.0 * np.pi * r) * dr
-
-    zc = np.where(z < 1e-12, 1e-12, z)[:, None]
-    rc = r[None, :]
-    cosA = (rc * rc + zc * zc - p * p) / (2.0 * rc * zc)
-    alpha = np.zeros_like(cosA)
-    inside_full = rc <= (p - zc)                 # ring entirely within planet
-    partial = (np.abs(cosA) < 1.0) & (~inside_full)
-    alpha[inside_full] = np.pi
-    alpha[partial] = np.arccos(np.clip(cosA[partial], -1.0, 1.0))
-
-    blocked = np.sum(I[None, :] * 2.0 * alpha * rc, axis=1) * dr
-    return 1.0 - blocked / Ftot
+_TM = RoadRunnerModel("quadratic")
 
 
 @functools.lru_cache(maxsize=16)
@@ -138,17 +104,9 @@ def _tp_to_t0(tp, period, ecc, omega):
 
 
 def _transit_flux(bjd, tp, period, ecc, omega, inc, ar, p, u1, u2):
-    # Sky-projected separation (units of R*) and line-of-sight sign, computed
-    # from the same orbital convention as _planet_xy (rotation by lambda does
-    # not change the separation, so it is irrelevant to the transit flux).
-    nu = _true_anomaly(bjd, tp, period, ecc)
-    r = ar * (1.0 - ecc ** 2) / (1.0 + ecc * np.cos(nu))
-    xs = -r * np.cos(nu + omega)
-    ys = -r * np.sin(nu + omega) * np.cos(inc)
-    sep = np.sqrt(xs * xs + ys * ys)
-    los = r * np.sin(nu + omega) * np.sin(inc)   # > 0 when planet is in front
-    flux = _occultquad_numeric(sep, p, u1, u2)
-    flux[los < 0.0] = 1.0                         # planet behind star: no transit
+    t0 = _tp_to_t0(tp, period, ecc, omega)
+    _TM.set_data(bjd)
+    flux = _TM.evaluate(abs(p), [u1, u2], t0, period, ar, inc, ecc, omega)
     return np.atleast_1d(np.asarray(flux, dtype=float))
 
 

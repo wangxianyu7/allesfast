@@ -87,10 +87,12 @@ for dilution:
 import numpy as np
 from pytransit import QuadraticModel ### Xian-Yu added, 2014-01-14
 from pytransit import RoadRunnerModel
+from pytransit import EclipseModel
 
 # Per-instrument transit models with data pre-loaded at initialisation.
 # set_data() is expensive; calling it once avoids repeating it on every likelihood eval.
 _tm_models = {}   # inst -> RoadRunnerModel with set_data already called
+_ecl_models = {}  # inst -> EclipseModel (secondary eclipse), set_data already called
 _tm_ttv_transit_idx = {}  # inst -> ndarray of global transit indices this inst covers (fit_ttvs mode)
 
 from radvel.kepler import rv_drive
@@ -798,8 +800,29 @@ def flux_subfct_ellc(params, inst, companion, xx=None, settings=None, t_exp=None
                 _tm.set_data(xx)
 
         model_flux1 = _tm.evaluate(k, ldc, t0, p, a, i, e, w)
-        model_flux2 = np.zeros_like(xx)
-        model_flux = 1. + ( (model_flux1+model_flux2-1.) * (1.-params['dil_'+inst]) )
+
+        #::: secondary eclipse via PyTransit EclipseModel (planet flux Fp = J*k^2;
+        #    multiplicative=True returns the visible fraction of the planet disk)
+        _J = params.get(companion+'_sbratio_'+inst, 0.) or 0.
+        if settings.get('secondary_eclipse', False) and (_J > 0):
+            if (inst in _ecl_models) and len(xx) == len(_data_xx) and (xx is _data_xx):
+                _em = _ecl_models[inst]
+            else:
+                _em = EclipseModel()
+                if t_exp is not None and n_int is not None and n_int > 1:
+                    _em.set_data(xx, lcids=np.zeros(len(xx), dtype=int),
+                                 nsamples=[n_int], exptimes=[t_exp])
+                else:
+                    _em.set_data(xx)
+                if len(xx) == len(_data_xx) and (xx is _data_xx):
+                    _ecl_models[inst] = _em
+            _Fp = _J * k**2
+            model_flux2 = _Fp * _em.evaluate(k, t0, p, a, i, e, w, multiplicative=True)
+            _total = (model_flux1 + model_flux2) / (1. + _Fp)
+        else:
+            model_flux2 = np.zeros_like(xx)
+            _total = model_flux1
+        model_flux = 1. + ( (_total-1.) * (1.-params['dil_'+inst]) )
     #-------------------------------------------------------------------------- 
     #::: else: constant 1
     #-------------------------------------------------------------------------- 
@@ -1263,18 +1286,20 @@ def rv_fct(params, inst, companion, xx=None, settings=None):
         e = secosw1**2 + sesinw1**2
         w = np.arctan2(sesinw1, secosw1)   # radians; arctan2 handles e==0 cleanly
 
-        # calculate the duration of the transit
+        # calculate the duration of the transit (in DAYS; transit_mask compares against time in days)
         try:
             R_star_over_a = params[companion+'_rsuma'] / (1. + params[companion+'_rr'])
             eccentricity_correction_T_tra = ( np.sqrt(1. - e**2) / ( 1. + e*np.sin(w) ) )
-            T_tra_tot = params[companion+'_period'] / np.pi * 24. \
+            b_tra = params[companion+'_cosi'] / R_star_over_a * (1. - e**2) / (1. + e*np.sin(w))
+            T_tra_tot = params[companion+'_period'] / np.pi \
                         * np.arcsin( R_star_over_a \
                                     * np.sqrt( (1. + params[companion+'_rr'])**2 - b_tra**2 ) \
                                     / np.sin( np.arccos(params[companion+'_cosi'])) ) \
-                        * eccentricity_correction_T_tra #in h
-        except:
-            # if the calculation of the duration of the transit fails, we set it to 0.5 days
-            T_tra_tot = 0.5
+                        * eccentricity_correction_T_tra #in days
+            T_tra_tot = 1.2 * T_tra_tot   # safety margin; RM model is ~0 off-disk anyway
+        except Exception:
+            # if the calculation of the duration of the transit fails, use a generous 1-day window
+            T_tra_tot = 1.0
 
         K1 = params[companion+'_K'] * 1e3   # km/s → m/s
         tp1 = timetrans_to_timeperi(tc1, per1, e, w)

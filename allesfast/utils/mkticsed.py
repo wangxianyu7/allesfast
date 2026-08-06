@@ -104,10 +104,17 @@ def _query_region(catalog, coord, radius_arcmin):
 
 
 def _query_tic(ticid):
-    """Query TICv8.2 by TIC ID using constraints; return table row or None."""
+    """Query TICv8.2 by TIC ID using constraints; return table row or None.
+
+    Vizier's `query_constraints` treats a bare string as a *fuzzy* match (CDS
+    has its own column-search grammar where the unprefixed value is roughly
+    "starts with / contains"). For some TIC IDs this silently returns 0 rows
+    even when the record exists — e.g. TIC 36352297 (CoRoT-1). Prefix the
+    value with '==' to force exact equality.
+    """
     v = Vizier(columns=['*'], row_limit=-1)
     try:
-        result = v.query_constraints(catalog='IV/39/tic82', TIC=str(ticid))
+        result = v.query_constraints(catalog='IV/39/tic82', TIC=f'=={ticid}')
         if result and len(result) > 0:
             t = result[0]
             mask = np.array([str(row) == str(ticid) for row in t['TIC']])
